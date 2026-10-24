@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/banner.svg" alt="Token Garden: a year of daily Claude Code activity as a heatmap, with most used model, peak month, longest streak and estimated cost" width="100%">
+  <img src="docs/banner.svg" alt="Claude Code Usage Calendar: a year of daily Claude Code activity as a heatmap, with most used model, peak month, longest streak and estimated cost" width="100%">
 </p>
 
 <p align="center">
@@ -49,22 +49,20 @@ You need **Claude Code 2.1.308 or later** and **Python 3** (`python3`, `python` 
 At the prompt of a Claude Code terminal session:
 
 ```
-/plugin install token-garden --marketplace Brakselk/token-garden
+/plugin install usage-calendar --marketplace Brakselk/claude-code-usage-calendar
 ```
 
 Answer `y` to add the marketplace, then pick a scope (Enter takes the user scope). From a shell instead:
 
 ```bash
-claude plugin install token-garden --marketplace Brakselk/token-garden
+claude plugin install usage-calendar --marketplace Brakselk/claude-code-usage-calendar
 ```
 
-In the desktop app, where `/plugin` does not run: click **+** next to the prompt box, then **Plugins**, **Add marketplace** with `Brakselk/token-garden`, then **Add plugin**.
-
-> While this repository is private, installing works only for people who can read it on GitHub and whose computer already has a git credential for github.com (an SSH key, or `gh auth login` then `gh auth setup-git`).
+In the desktop app, where `/plugin` does not run: click **+** next to the prompt box, then **Plugins**, **Add marketplace** with `Brakselk/claude-code-usage-calendar`, then **Add plugin**.
 
 ## Use
 
-- The panel opens by itself in every session. Its × closes it for that session only; `/token-garden` opens it again. The status line under the prompt box reminds you of that command and shows your 5-hour and weekly limits.
+- The panel opens by itself in every session. Its × closes it for that session only; `/usage-calendar` opens it again. The status line under the prompt box reminds you of that command and shows your 5-hour and weekly limits.
 - **Refresh** (or `R` while the panel has the keyboard) recounts your usage. It also refreshes on its own at the start of a session and every 30 minutes.
 - **TR / EN** switches the language, the dots next to **Color** switch the accent, and each section title opens or closes it.
 
@@ -82,7 +80,7 @@ How to make that web version is in [docs/web-dashboard.md](docs/web-dashboard.md
 ## Privacy
 
 - Everything runs on your computer. The panel reads Claude Code's own files under `~/.claude` (session transcripts and `stats-cache.json`) and the desktop app's session list, and keeps its numbers in the plugin's local store. Nothing is uploaded.
-- The script counts messages, tool calls and tokens and reads session titles. It does not read what you or Claude wrote. The one exception: it looks for the marker `[token-garden-refresh]` so that the optional web-refresh task's own sessions are left out of your numbers.
+- The script counts messages, tool calls and tokens and reads session titles. It does not read what you or Claude wrote. The one exception: it looks for the marker `[usage-calendar-refresh]` so that the optional web-refresh task's own sessions are left out of your numbers.
 - Limits and context fill come from Claude Code itself, through the plugin API.
 
 ## How the numbers are counted

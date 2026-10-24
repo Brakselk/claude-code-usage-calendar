@@ -7,8 +7,8 @@ import type { Strings } from './i18n'
 
 type E = EngineInterface
 
-const PANE = 'token-garden'
-const COMMAND = 'token-garden'
+const PANE = 'usage-calendar'
+const COMMAND = 'usage-calendar'
 const DAY = 864e5
 const STALE_MS = 30 * 60e3
 const NO_PYTHON = 'no-python'
@@ -47,15 +47,15 @@ const DEFAULT_VIEW: CalendarView = {
   open: { tokens: false, limits: true, sessions: true, hours: false, days: false },
 }
 
-const dataAtom = atom({ plugin: 'token-garden', key: 'data' } as const, null)
-const liveAtom = atom({ plugin: 'token-garden', key: 'live' } as const, null)
-const viewAtom = atom({ plugin: 'token-garden', key: 'view' } as const, DEFAULT_VIEW)
-const refreshAtom = atom({ plugin: 'token-garden', key: 'refresh' } as const, {
+const dataAtom = atom({ plugin: 'usage-calendar', key: 'data' } as const, null)
+const liveAtom = atom({ plugin: 'usage-calendar', key: 'live' } as const, null)
+const viewAtom = atom({ plugin: 'usage-calendar', key: 'view' } as const, DEFAULT_VIEW)
+const refreshAtom = atom({ plugin: 'usage-calendar', key: 'refresh' } as const, {
   isRunning: false,
   lastAt: null,
   error: null,
 } as RefreshState)
-const openPane = ($: E) => $.ui.open({ id: PANE, title: 'Token Garden' })
+const openPane = ($: E) => $.ui.open({ id: PANE, title: 'Usage Calendar' })
 
 // The line under the prompt: how to reopen the panel, and the limits as they stand
 async function showStatus($: E): Promise<void> {
@@ -382,7 +382,7 @@ export const register: Register = (on, options: PluginOptions) => {
   const webTask = typeof options.webRefreshTask === 'string' ? options.webRefreshTask.trim() : ''
 
   on('session.start', async ($, e, next) => {
-    await $.command.register({ name: COMMAND, description: 'Open the Token Garden panel' })
+    await $.command.register({ name: COMMAND, description: 'Open the Claude Code Usage Calendar panel' })
     const [view, data, limits] = await Promise.all([$.store.get('view'), $.store.get('data'), $.store.get('limits')])
     if (view && typeof view === 'object') {
       const saved = view as Partial<CalendarView>
@@ -408,7 +408,7 @@ export const register: Register = (on, options: PluginOptions) => {
   on('command.run', { command: COMMAND }, async $ => {
     await openPane($)
 
-    return { text: 'Token Garden opened.' }
+    return { text: 'Usage Calendar opened.' }
   })
 
   on('session.measure', async ($, e, next) => {

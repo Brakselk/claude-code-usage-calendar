@@ -87,7 +87,7 @@ export type Strings = {
 
 export const STRINGS: Record<Lang, Strings> = {
   en: {
-    title: 'Token Garden',
+    title: 'Claude Code Usage Calendar',
     dataAsOf: w => `Data as of ${w}`,
     noData: 'No data yet: press Refresh',
     refreshedAgo: r => `refreshed ${r}`,
@@ -100,7 +100,7 @@ export const STRINGS: Record<Lang, Strings> = {
     toastRefreshed: 'Calendar refreshed',
     toastWeb: 'Web update requested',
     webPrompt: t =>
-      `Update the web version of Token Garden: run the scheduled task "${t}" with mcp__scheduled-tasks__run_scheduled_task (load it with ToolSearch if needed). Don't wait for it to finish; say in one line that it started.`,
+      `Update the web version of the Claude Code Usage Calendar: run the scheduled task "${t}" with mcp__scheduled-tasks__run_scheduled_task (load it with ToolSearch if needed). Don't wait for it to finish; say in one line that it started.`,
     color: 'Color',
     tiles: {
       activeDays: 'Active days',
@@ -173,11 +173,11 @@ export const STRINGS: Record<Lang, Strings> = {
     rel: (t, f) => (f ? `in ${t}` : `${t} ago`),
     units: { min: 'm', hour: 'h', day: 'd' },
     loading: 'Reading usage data…',
-    statusHint: 'Token Garden: /token-garden',
+    statusHint: 'Usage Calendar: /usage-calendar',
     statusLimits: { five_hour: '5h', seven_day: 'week' },
   },
   tr: {
-    title: 'Token Garden',
+    title: 'Claude Code Kullanım Takvimi',
     dataAsOf: w => `Veriler ${w} itibarıyla`,
     noData: "Henüz veri yok: Yenile'ye bas",
     refreshedAgo: r => `panelden yenilendi ${r}`,
@@ -190,7 +190,7 @@ export const STRINGS: Record<Lang, Strings> = {
     toastRefreshed: 'Takvim yenilendi',
     toastWeb: 'Web güncellemesi istendi',
     webPrompt: t =>
-      `Token Garden'ın web sürümünü güncelle: mcp__scheduled-tasks__run_scheduled_task aracıyla "${t}" görevini çalıştır (gerekirse ToolSearch ile yükle). Bitmesini bekleme, başlatıldığını tek satırla söyle.`,
+      `Claude Code Kullanım Takvimi'nin web sürümünü güncelle: mcp__scheduled-tasks__run_scheduled_task aracıyla "${t}" görevini çalıştır (gerekirse ToolSearch ile yükle). Bitmesini bekleme, başlatıldığını tek satırla söyle.`,
     color: 'Renk',
     tiles: {
       activeDays: 'Aktif gün',
@@ -263,7 +263,7 @@ export const STRINGS: Record<Lang, Strings> = {
     rel: (t, f) => `${t} ${f ? 'sonra' : 'önce'}`,
     units: { min: 'dk', hour: 'sa', day: 'gün' },
     loading: 'Kullanım verileri okunuyor…',
-    statusHint: 'Token Garden: /token-garden',
+    statusHint: 'Kullanım Takvimi: /usage-calendar',
     statusLimits: { five_hour: '5 saat', seven_day: 'haftalık' },
   },
 }

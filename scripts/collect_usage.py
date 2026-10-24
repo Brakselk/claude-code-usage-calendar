@@ -19,7 +19,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 
 HOME = os.path.expanduser("~/.claude")
-MARKER = "[token-garden-refresh]"
+MARKER = "[usage-calendar-refresh]"
 ACTIVE_HOURS = 24
 NOW = datetime.now().astimezone()
 

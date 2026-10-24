@@ -1,5 +1,5 @@
 {
-  "name": "token-garden",
+  "name": "usage-calendar",
   "version": "0.1.0",
   "description": "A GitHub-style calendar of your Claude Code usage in a side panel: daily heatmap, live plan limits, context fill per session, tokens and estimated cost.",
   "author": { "name": "Brakselk", "url": "https://github.com/Brakselk" },

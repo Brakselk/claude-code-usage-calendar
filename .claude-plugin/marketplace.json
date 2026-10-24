@@ -1,10 +1,10 @@
 {
-  "name": "token-garden",
+  "name": "claude-code-usage-calendar",
   "owner": { "name": "Brakselk" },
-  "description": "Token Garden: a side panel that shows your Claude Code usage as a GitHub-style calendar.",
+  "description": "Claude Code Usage Calendar: a side panel that shows your Claude Code usage as a GitHub-style calendar.",
   "plugins": [
     {
-      "name": "token-garden",
+      "name": "usage-calendar",
       "source": "./",
       "description": "A GitHub-style calendar of your Claude Code usage in a side panel."
     }

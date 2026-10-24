@@ -67,7 +67,7 @@ export type RefreshState = {
 
 declare module 'claude-code' {
   interface PluginState {
-    'token-garden': {
+    'usage-calendar': {
       data: UsageData | null
       live: LiveUsage | null
       view: CalendarView

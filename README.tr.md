@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/banner.svg" alt="Token Garden: bir yıllık günlük Claude Code kullanımı ısı haritası olarak; en çok kullanılan model, en yoğun ay, en uzun seri ve tahmini maliyet" width="100%">
+  <img src="docs/banner.svg" alt="Claude Code Kullanım Takvimi: bir yıllık günlük Claude Code kullanımı ısı haritası olarak; en çok kullanılan model, en yoğun ay, en uzun seri ve tahmini maliyet" width="100%">
 </p>
 
 <p align="center">
@@ -49,22 +49,20 @@
 Claude Code terminal oturumunda:
 
 ```
-/plugin install token-garden --marketplace Brakselk/token-garden
+/plugin install usage-calendar --marketplace Brakselk/claude-code-usage-calendar
 ```
 
 Pazar yerini eklemek için `y`, ardından bir kapsam seç (Enter kullanıcı kapsamını alır). Ya da kabuktan:
 
 ```bash
-claude plugin install token-garden --marketplace Brakselk/token-garden
+claude plugin install usage-calendar --marketplace Brakselk/claude-code-usage-calendar
 ```
 
-Masaüstü uygulamasında `/plugin` çalışmaz: istem kutusunun yanındaki **+**'ya, sonra **Plugins**'e tıkla; **Add marketplace** ile `Brakselk/token-garden` ekle, ardından **Add plugin**.
-
-> Bu depo gizliyken kurulum yalnızca depoyu GitHub'da okuyabilen ve bilgisayarında github.com için git kimlik bilgisi olan kişilerde çalışır (bir SSH anahtarı ya da `gh auth login` ardından `gh auth setup-git`).
+Masaüstü uygulamasında `/plugin` çalışmaz: istem kutusunun yanındaki **+**'ya, sonra **Plugins**'e tıkla; **Add marketplace** ile `Brakselk/claude-code-usage-calendar` ekle, ardından **Add plugin**.
 
 ## Kullanım
 
-- Panel her oturumda kendiliğinden açılır. × onu yalnızca o oturum için kapatır; `/token-garden` yeniden açar. Mesaj kutusunun altındaki durum satırı bu komutu hatırlatır ve 5 saatlik ile haftalık limitlerini gösterir.
+- Panel her oturumda kendiliğinden açılır. × onu yalnızca o oturum için kapatır; `/usage-calendar` yeniden açar. Mesaj kutusunun altındaki durum satırı bu komutu hatırlatır ve 5 saatlik ile haftalık limitlerini gösterir.
 - **Refresh / Yenile** (panel klavyedeyken `R`) kullanımı yeniden sayar. Ayrıca oturum başında ve her 30 dakikada bir kendiliğinden yenilenir.
 - **TR / EN** dili, **Renk** yanındaki noktalar vurgu rengini değiştirir; bölüm başlıkları bölümü açıp kapatır.
 
@@ -82,7 +80,7 @@ Web sürümünün nasıl kurulacağı [docs/web-dashboard.md](docs/web-dashboard
 ## Gizlilik
 
 - Her şey senin bilgisayarında çalışır. Panel Claude Code'un `~/.claude` altındaki kendi dosyalarını (oturum dökümleri ve `stats-cache.json`) ve masaüstü uygulamasının oturum listesini okur, rakamları eklentinin yerel deposunda tutar. Hiçbir şey dışarı gönderilmez.
-- Script mesajları, araç çağrılarını ve tokenları sayar, oturum başlıklarını okur. Senin ya da Claude'un yazdıklarını okumaz. Tek istisna: isteğe bağlı web yenileme görevinin kendi oturumlarını rakamlardan çıkarmak için `[token-garden-refresh]` işaretine bakar.
+- Script mesajları, araç çağrılarını ve tokenları sayar, oturum başlıklarını okur. Senin ya da Claude'un yazdıklarını okumaz. Tek istisna: isteğe bağlı web yenileme görevinin kendi oturumlarını rakamlardan çıkarmak için `[usage-calendar-refresh]` işaretine bakar.
 - Limitler ve bağlam doluluğu eklenti arayüzü üzerinden doğrudan Claude Code'dan gelir.
 
 ## Rakamlar nasıl sayılıyor

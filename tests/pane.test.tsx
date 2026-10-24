@@ -18,10 +18,10 @@ const SAMPLE = {
 }
 
 const PANE = {
-  plugin: 'token-garden',
+  plugin: 'usage-calendar',
   component: 'Pane',
-  requestId: 'token-garden',
-  props: { title: 'Token Garden', isFocused: false, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} },
+  requestId: 'usage-calendar',
+  props: { title: 'Usage Calendar', isFocused: false, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} },
 } as const
 
 const has = async (ui: { find: (q: { type: 'Text'; text: RegExp }) => Promise<unknown> }, text: RegExp) =>
@@ -30,7 +30,7 @@ const has = async (ui: { find: (q: { type: 'Text'; text: RegExp }) => Promise<un
 function engine(on: any, runs: string[][], stdout = JSON.stringify(SAMPLE), opened = { count: 0 }) {
   mock.clock(on, { now: NOW })
   mock.store(on)
-  on('command.register', () => ({ value: { command: 'token-garden' } }))
+  on('command.register', () => ({ value: { command: 'usage-calendar' } }))
   on('ui.open', () => {
     opened.count += 1
     return { value: { isPlaced: true } }
@@ -65,7 +65,7 @@ test('the panel draws in English and switches to Turkish', async ($, on) => {
   // The first start has no kept data, so it runs the script, trying Python names in turn
   expect(runs.map(r => r[0])).toEqual(['python3', 'python'])
   expect(runs[1]?.slice(-1)).toEqual(['--json'])
-  expect(await has(ui, /^Token Garden$/)).toBe('found')
+  expect(await has(ui, /^Claude Code Usage Calendar$/)).toBe('found')
   expect(await has(ui, /^1,600$/)).toBe('found') // messages, all days
   expect(await has(ui, /^Opus 5\.5$/)).toBe('found')
   expect(await has(ui, /^October 2026$/)).toBe('found')
@@ -118,7 +118,7 @@ test('with the options set, the web controls show', { options: { webUrl: 'https:
 test('a machine without Python gets told how to fix it', async ($, on) => {
   mock.clock(on, { now: NOW })
   mock.store(on)
-  on('command.register', () => ({ value: { command: 'token-garden' } }))
+  on('command.register', () => ({ value: { command: 'usage-calendar' } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('session.start', (_: unknown, e: { cwd: string }) => ({ cwd: e.cwd }))
   on('session.usage', () => ({ value: { startedAt: 0, context: { window: 1_000_000 }, rateLimits: [] } }))
@@ -147,7 +147,7 @@ test('the status line says how to reopen the panel and shows the limits', async 
     return { value: undefined }
   })
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  expect(JSON.stringify(statuses[statuses.length - 1])).toContain('Token Garden: /token-garden · 5h 23% · week 12%')
+  expect(JSON.stringify(statuses[statuses.length - 1])).toContain('Usage Calendar: /usage-calendar · 5h 23% · week 12%')
 
   // It follows the language switch
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })

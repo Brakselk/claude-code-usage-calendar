@@ -5,7 +5,7 @@ The panel needs nothing else. If you also want the calendar as a page you can op
 ## 1. Write the numbers to a folder
 
 ```bash
-python3 <plugin folder>/scripts/collect_usage.py --out ~/.claude/token-garden-web
+python3 <plugin folder>/scripts/collect_usage.py --out ~/.claude/usage-calendar-web
 ```
 
 This writes `daily.json`, `hours.json`, `sessions.json` and `limits.json` there. (`limits.json` stays empty until step 3's task has run once.)
@@ -14,7 +14,7 @@ This writes `daily.json`, `hours.json`, `sessions.json` and `limits.json` there.
 
 In a Claude Code session in the desktop app, ask something like:
 
-> Build me a claude.ai dashboard from the JSON files in `~/.claude/token-garden-web`: a GitHub-style heatmap of daily usage from `daily.json`, usage limits from `limits.json`, active sessions from `sessions.json` and prompts by hour from `hours.json`.
+> Build me a claude.ai dashboard from the JSON files in `~/.claude/usage-calendar-web`: a GitHub-style heatmap of daily usage from `daily.json`, usage limits from `limits.json`, active sessions from `sessions.json` and prompts by hour from `hours.json`.
 
 Claude publishes it and gives you a link. Keep that link: it is your `webUrl`.
 
@@ -25,8 +25,8 @@ Ask Claude to create a scheduled task (for example every morning) with the promp
 Keep the first line exactly as it is. The marker tells the calendar to leave the task's own sessions out of your numbers.
 
 ```text
-[token-garden-refresh]
-Refresh the Token Garden dashboard at <DASHBOARD_URL>. Do only these steps and change nothing else. If a step fails, stop and say in one line which step it was.
+[usage-calendar-refresh]
+Refresh the Claude Code Usage Calendar dashboard at <DASHBOARD_URL>. Do only these steps and change nothing else. If a step fails, stop and say in one line which step it was.
 
 1. Load the tools with ToolSearch: "select:mcp__ccd_session_mgmt__get_usage,ArtifactData".
 2. Call mcp__ccd_session_mgmt__get_usage with no arguments. If plan.status is "ok", write the JSON it returns, unchanged, to <FOLDER>/usage_raw.json with the Write tool.
