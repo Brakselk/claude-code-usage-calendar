@@ -388,22 +388,16 @@ export const register: Register = (on, options: PluginOptions) => {
     const generated = data && typeof data === 'object' ? Date.parse((data as UsageData).generatedAt) : 0
     if (!generated || (await $.clock.now()) - generated > STALE_MS) void refreshAll($)
     $.clock.every(STALE_MS, () => void refreshAll($))
-    if ((await $.store.get('closed')) !== true) void $.ui.open({ id: PANE, title: 'Token Garden' })
+    // Every session opens with the panel; its × closes it for that session alone
+    void $.ui.open({ id: PANE, title: 'Token Garden' })
 
     return next(e)
   })
 
   on('command.run', { command: COMMAND }, async $ => {
-    await $.store.set('closed', false)
     await $.ui.open({ id: PANE, title: 'Token Garden' })
 
     return { text: 'Token Garden opened.' }
-  })
-
-  on('ui.close', async ($, e, next) => {
-    if (e.id === PANE && e.origin.kind === 'person') await $.store.set('closed', true)
-
-    return next(e)
   })
 
   on('session.measure', async ($, e, next) => {
