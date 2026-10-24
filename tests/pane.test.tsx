@@ -27,11 +27,14 @@ const PANE = {
 const has = async (ui: { find: (q: { type: 'Text'; text: RegExp }) => Promise<unknown> }, text: RegExp) =>
   (await ui.find({ type: 'Text', text })) ? 'found' : `missing ${text}`
 
-function engine(on: any, runs: string[][], stdout = JSON.stringify(SAMPLE)) {
+function engine(on: any, runs: string[][], stdout = JSON.stringify(SAMPLE), opened = { count: 0 }) {
   mock.clock(on, { now: NOW })
   mock.store(on)
   on('command.register', () => ({ value: { command: 'token-garden' } }))
-  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.open', () => {
+    opened.count += 1
+    return { value: { isPlaced: true } }
+  })
   on('ui.toast', () => ({ value: undefined }))
   on('session.start', (_: unknown, e: { cwd: string }) => ({ cwd: e.cwd }))
   on('session.id', () => ({ value: 'self' }))
@@ -134,4 +137,35 @@ test('the terminal gets words where pictures would be', async ($, on) => {
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect(await has(ui, /Daily messages over the last 6 months/)).toBe('found')
   await ui.unmount()
+})
+
+const BAND = {
+  plugin: 'token-garden',
+  component: 'AbovePrompt',
+  requestId: 'band',
+  props: { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 80, scroll: { offset: 0, bodyRows: 9 }, view: {} },
+} as const
+
+test('the button above the prompt shows only while the panel is closed', async ($, on) => {
+  const opened = { count: 0 }
+  engine(on, [], JSON.stringify(SAMPLE), opened)
+  // What the engine draws in the band when the plugin passes
+  on('ui.render', ($: any, e: any) => {
+    const { Text } = $.ui.resolve(e)
+    return <Text>engine band</Text>
+  })
+
+  // Before the session opens the panel, it counts as closed: the button shows
+  let band = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await band.find({ type: 'Button', key: 'open-token-garden' })).toBeDefined()
+  await band.press({ key: 'open-token-garden' })
+  expect(opened.count).toBe(1)
+  expect(await band.find({ type: 'Button', key: 'open-token-garden' })).toBeUndefined()
+  await band.unmount()
+
+  // The session start opens it too, so the band stays the engine's
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  band = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await band.find({ type: 'Text', text: /engine band/ })).toBeDefined()
+  await band.unmount()
 })

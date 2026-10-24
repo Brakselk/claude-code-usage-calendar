@@ -72,6 +72,8 @@ declare module 'claude-code' {
       live: LiveUsage | null
       view: CalendarView
       refresh: RefreshState
+      /** Whether the panel is open, so the band above the prompt can offer to reopen it */
+      paneOpen: boolean
     }
   }
 }

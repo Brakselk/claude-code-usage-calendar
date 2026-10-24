@@ -55,6 +55,12 @@ const refreshAtom = atom({ plugin: 'token-garden', key: 'refresh' } as const, {
   lastAt: null,
   error: null,
 } as RefreshState)
+const paneOpenAtom = atom({ plugin: 'token-garden', key: 'paneOpen' } as const, false)
+
+async function openPane($: E): Promise<void> {
+  await update($, paneOpenAtom, () => true)
+  await $.ui.open({ id: PANE, title: 'Token Garden' })
+}
 
 // --- formatting -----------------------------------------------------------
 
@@ -389,15 +395,33 @@ export const register: Register = (on, options: PluginOptions) => {
     if (!generated || (await $.clock.now()) - generated > STALE_MS) void refreshAll($)
     $.clock.every(STALE_MS, () => void refreshAll($))
     // Every session opens with the panel; its × closes it for that session alone
-    void $.ui.open({ id: PANE, title: 'Token Garden' })
+    void openPane($)
 
     return next(e)
   })
 
   on('command.run', { command: COMMAND }, async $ => {
-    await $.ui.open({ id: PANE, title: 'Token Garden' })
+    await openPane($)
 
     return { text: 'Token Garden opened.' }
+  })
+
+  on('ui.close', async ($, e, next) => {
+    if (e.id === PANE) await update($, paneOpenAtom, () => false)
+
+    return next(e)
+  })
+
+  // While the panel is closed, a button above the prompt opens it again
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    if (e.props.hasSurvey || (await read($, paneOpenAtom))) return next(e)
+    const { Box, Button } = $.ui.resolve(e)
+
+    return (
+      <Box flexDirection="row">
+        <Button key="open-token-garden" label="Token Garden" onPress={() => openPane($)} />
+      </Box>
+    )
   })
 
   on('session.measure', async ($, e, next) => {

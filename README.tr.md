@@ -64,7 +64,7 @@ Masaüstü uygulamasında `/plugin` çalışmaz: istem kutusunun yanındaki **+*
 
 ## Kullanım
 
-- Panel her oturumda kendiliğinden açılır. × onu yalnızca o oturum için kapatır; `/token-garden` yeniden açar.
+- Panel her oturumda kendiliğinden açılır. × onu yalnızca o oturum için kapatır; ardından mesaj kutusunun üstünde bir **Token Garden** düğmesi çıkar ve tıklayınca yeniden açar (`/token-garden` da açar).
 - **Refresh / Yenile** (panel klavyedeyken `R`) kullanımı yeniden sayar. Ayrıca oturum başında ve her 30 dakikada bir kendiliğinden yenilenir.
 - **TR / EN** dili, **Renk** yanındaki noktalar vurgu rengini değiştirir; bölüm başlıkları bölümü açıp kapatır.
 
