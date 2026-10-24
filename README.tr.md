@@ -98,6 +98,10 @@ Web sürümünün nasıl kurulacağı [docs/web-dashboard.md](docs/web-dashboard
 - Panelin dayandığı eklenti arayüzü erken erişimdedir; Claude Code sürümleri arasında değişebilir.
 - Fiyatlar `scripts/collect_usage.py` içinde sabittir; liste fiyatları değişince güncellenmeleri gerekir.
 
+## Emeği geçenler
+
+[Brakselk](https://github.com/Brakselk) tarafından, [Claude Code](https://claude.com/claude-code) ile birlikte yapıldı.
+
 ## Lisans
 
 [MIT](LICENSE)

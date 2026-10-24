@@ -98,6 +98,10 @@ How to make that web version is in [docs/web-dashboard.md](docs/web-dashboard.md
 - The plugin API this panel is built on is in early access and can change between Claude Code releases.
 - Prices are built into `scripts/collect_usage.py` and need updating when list prices change.
 
+## Credits
+
+Made by [Brakselk](https://github.com/Brakselk), built together with [Claude Code](https://claude.com/claude-code).
+
 ## License
 
 [MIT](LICENSE)
