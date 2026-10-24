@@ -62,7 +62,7 @@ Masaüstü uygulamasında `/plugin` çalışmaz: istem kutusunun yanındaki **+*
 
 ## Kullanım
 
-- Panel her oturumda kendiliğinden açılır. × onu yalnızca o oturum için kapatır; `/usage-calendar` yeniden açar. Mesaj kutusunun altındaki durum satırı bu komutu hatırlatır ve 5 saatlik ile haftalık limitlerini gösterir.
+- Panel her oturumda kendiliğinden açılır. × onu yalnızca o oturum için kapatır. Yeniden açmak için mesaj kutusuna `/` yaz ve komut menüsünden `/usage-calendar`ı seç. Mesaj kutusunun altındaki durum satırı bu komutu hatırlatır ve 5 saatlik ile haftalık limitlerini gösterir (oturumdaki ilk yanıttan sonra görünür).
 - **Refresh / Yenile** (panel klavyedeyken `R`) kullanımı yeniden sayar. Ayrıca oturum başında ve her 30 dakikada bir kendiliğinden yenilenir.
 - **TR / EN** dili, **Renk** yanındaki noktalar vurgu rengini değiştirir; bölüm başlıkları bölümü açıp kapatır.
 

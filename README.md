@@ -62,7 +62,7 @@ In the desktop app, where `/plugin` does not run: click **+** next to the prompt
 
 ## Use
 
-- The panel opens by itself in every session. Its × closes it for that session only; `/usage-calendar` opens it again. The status line under the prompt box reminds you of that command and shows your 5-hour and weekly limits.
+- The panel opens by itself in every session. Its × closes it for that session only. To open it again, type `/` in the prompt box and pick `/usage-calendar` from the command menu. The status line under the prompt box reminds you of that command and shows your 5-hour and weekly limits (it appears after the first reply in a session).
 - **Refresh** (or `R` while the panel has the keyboard) recounts your usage. It also refreshes on its own at the start of a session and every 30 minutes.
 - **TR / EN** switches the language, the dots next to **Color** switch the accent, and each section title opens or closes it.
 
