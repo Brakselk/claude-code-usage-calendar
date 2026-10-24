@@ -139,33 +139,19 @@ test('the terminal gets words where pictures would be', async ($, on) => {
   await ui.unmount()
 })
 
-const BAND = {
-  plugin: 'token-garden',
-  component: 'AbovePrompt',
-  requestId: 'band',
-  props: { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 80, scroll: { offset: 0, bodyRows: 9 }, view: {} },
-} as const
-
-test('the button above the prompt shows only while the panel is closed', async ($, on) => {
-  const opened = { count: 0 }
-  engine(on, [], JSON.stringify(SAMPLE), opened)
-  // What the engine draws in the band when the plugin passes
-  on('ui.render', ($: any, e: any) => {
-    const { Text } = $.ui.resolve(e)
-    return <Text>engine band</Text>
+test('the status line says how to reopen the panel and shows the limits', async ($, on) => {
+  const statuses: unknown[] = []
+  engine(on, [])
+  on('ui.status', (_: unknown, e: unknown) => {
+    statuses.push(e)
+    return { value: undefined }
   })
-
-  // Before the session opens the panel, it counts as closed: the button shows
-  let band = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  expect(await band.find({ type: 'Button', key: 'open-token-garden' })).toBeDefined()
-  await band.press({ key: 'open-token-garden' })
-  expect(opened.count).toBe(1)
-  expect(await band.find({ type: 'Button', key: 'open-token-garden' })).toBeUndefined()
-  await band.unmount()
-
-  // The session start opens it too, so the band stays the engine's
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  band = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  expect(await band.find({ type: 'Text', text: /engine band/ })).toBeDefined()
-  await band.unmount()
+  expect(JSON.stringify(statuses[statuses.length - 1])).toContain('Token Garden: /token-garden · 5h 23% · week 12%')
+
+  // It follows the language switch
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  await ui.press({ key: 'lang' })
+  expect(JSON.stringify(statuses[statuses.length - 1])).toContain('5 saat %23 · haftalık %12')
+  await ui.unmount()
 })

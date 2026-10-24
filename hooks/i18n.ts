@@ -81,6 +81,8 @@ export type Strings = {
   rel: (text: string, isFuture: boolean) => string
   units: { min: string; hour: string; day: string }
   loading: string
+  statusHint: string
+  statusLimits: Record<string, string>
 }
 
 export const STRINGS: Record<Lang, Strings> = {
@@ -171,6 +173,8 @@ export const STRINGS: Record<Lang, Strings> = {
     rel: (t, f) => (f ? `in ${t}` : `${t} ago`),
     units: { min: 'm', hour: 'h', day: 'd' },
     loading: 'Reading usage data…',
+    statusHint: 'Token Garden: /token-garden',
+    statusLimits: { five_hour: '5h', seven_day: 'week' },
   },
   tr: {
     title: 'Token Garden',
@@ -259,5 +263,7 @@ export const STRINGS: Record<Lang, Strings> = {
     rel: (t, f) => `${t} ${f ? 'sonra' : 'önce'}`,
     units: { min: 'dk', hour: 'sa', day: 'gün' },
     loading: 'Kullanım verileri okunuyor…',
+    statusHint: 'Token Garden: /token-garden',
+    statusLimits: { five_hour: '5 saat', seven_day: 'haftalık' },
   },
 }

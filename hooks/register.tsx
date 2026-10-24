@@ -55,11 +55,14 @@ const refreshAtom = atom({ plugin: 'token-garden', key: 'refresh' } as const, {
   lastAt: null,
   error: null,
 } as RefreshState)
-const paneOpenAtom = atom({ plugin: 'token-garden', key: 'paneOpen' } as const, false)
+const openPane = ($: E) => $.ui.open({ id: PANE, title: 'Token Garden' })
 
-async function openPane($: E): Promise<void> {
-  await update($, paneOpenAtom, () => true)
-  await $.ui.open({ id: PANE, title: 'Token Garden' })
+// The line under the prompt: how to reopen the panel, and the limits as they stand
+async function showStatus($: E): Promise<void> {
+  const [view, live] = await Promise.all([read($, viewAtom), read($, liveAtom)])
+  const S = STRINGS[view.lang]
+  const limits = (live?.rateLimits ?? []).map(r => `${S.statusLimits[r.kind] ?? r.kind} ${fmtPct(r.percentUsed, S, view.lang)}`)
+  $.ui.status([S.statusHint, ...limits].join(' · '))
 }
 
 // --- formatting -----------------------------------------------------------
@@ -181,6 +184,7 @@ async function keepLive($: E, live: LiveUsage): Promise<void> {
   await update($, liveAtom, () => live)
   // A new session has no reading until its first reply: it shows the last one meanwhile
   if (live.rateLimits.length > 0) await $.store.set('limits', { rateLimits: live.rateLimits, at: live.at })
+  await showStatus($)
 }
 
 async function refreshAll($: E): Promise<void> {
@@ -205,6 +209,7 @@ async function refreshAll($: E): Promise<void> {
 async function setView($: E, fn: (v: CalendarView) => CalendarView): Promise<void> {
   await update($, viewAtom, fn)
   await $.store.set('view', await read($, viewAtom))
+  await showStatus($) // the language may have changed
 }
 
 function summarize(days: DayRow[], nowMs: number, offsetMin: number) {
@@ -404,24 +409,6 @@ export const register: Register = (on, options: PluginOptions) => {
     await openPane($)
 
     return { text: 'Token Garden opened.' }
-  })
-
-  on('ui.close', async ($, e, next) => {
-    if (e.id === PANE) await update($, paneOpenAtom, () => false)
-
-    return next(e)
-  })
-
-  // While the panel is closed, a button above the prompt opens it again
-  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    if (e.props.hasSurvey || (await read($, paneOpenAtom))) return next(e)
-    const { Box, Button } = $.ui.resolve(e)
-
-    return (
-      <Box flexDirection="row">
-        <Button key="open-token-garden" label="Token Garden" onPress={() => openPane($)} />
-      </Box>
-    )
   })
 
   on('session.measure', async ($, e, next) => {
