@@ -18,3 +18,10 @@ Thumbs.db
 *.log
 *~
 *.swp
+
+# Local tooling
+.claude/settings.local.json
+.env
+node_modules/
+.vscode/
+.idea/

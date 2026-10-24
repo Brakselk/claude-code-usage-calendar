@@ -1,10 +1,11 @@
 {
   "name": "usage-calendar",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A GitHub-style calendar of your Claude Code usage in a side panel: daily heatmap, live plan limits, context fill per session, tokens and estimated cost.",
   "author": { "name": "Brakselk", "url": "https://github.com/Brakselk" },
   "license": "MIT",
   "keywords": ["usage", "calendar", "heatmap", "tokens", "limits", "panel"],
+  "icon": "./.claude-plugin/icon.png",
   "types": "./types/index.d.ts",
   "userConfig": {
     "webUrl": {

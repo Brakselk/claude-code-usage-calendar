@@ -14,6 +14,8 @@ export type DayRow = {
   outputTokens?: number
   /** At API list prices; a subscription does not bill it */
   costUsd?: number
+  /** Tokens of models the price table doesn't know: in the totals, not in the cost */
+  unpricedTokens?: number
   models?: Record<string, number>
   isEstimated?: boolean
 }
@@ -45,6 +47,9 @@ export type LiveLimit = { kind: string; percentUsed: number; resetsAt: string | 
 
 export type LiveUsage = {
   rateLimits: LiveLimit[]
+  /** When these limits were read, and whether this session read them (else a kept earlier reading) */
+  limitsAt: number | null
+  limitsLive: boolean
   contextTokens: number | null
   contextWindow: number | null
   contextPercent: number | null
@@ -61,6 +66,7 @@ export type CalendarView = {
 
 export type RefreshState = {
   isRunning: boolean
+  startedAt: number | null
   lastAt: number | null
   error: string | null
 }

@@ -8,10 +8,11 @@ import type { Strings } from './i18n'
 type E = EngineInterface
 
 const PANE = 'usage-calendar'
-const COMMAND = 'usage-calendar'
 const DAY = 864e5
 const STALE_MS = 30 * 60e3
+const RUN_LIMIT_MS = 150_000 // the script's own timeout is 120 s
 const NO_PYTHON = 'no-python'
+const BAD_OUTPUT = 'bad-output'
 
 const MUTED = '#8a8a8a'
 const WARN = '#d9a441'
@@ -52,10 +53,15 @@ const liveAtom = atom({ plugin: 'usage-calendar', key: 'live' } as const, null)
 const viewAtom = atom({ plugin: 'usage-calendar', key: 'view' } as const, DEFAULT_VIEW)
 const refreshAtom = atom({ plugin: 'usage-calendar', key: 'refresh' } as const, {
   isRunning: false,
+  startedAt: null,
   lastAt: null,
   error: null,
 } as RefreshState)
-const openPane = ($: E) => $.ui.open({ id: PANE, title: 'Usage Calendar' })
+
+async function openPane($: E): Promise<void> {
+  const view = await read($, viewAtom)
+  await $.ui.open({ id: PANE, title: STRINGS[view.lang].paneTitle })
+}
 
 // The line under the prompt: how to reopen the panel, and the limits as they stand
 async function showStatus($: E): Promise<void> {
@@ -77,10 +83,15 @@ function fmtDec(n: number, S: Strings): string {
 }
 
 function fmtCompact(n: number, S: Strings): string {
-  const [k, m, b] = S.compact
-  if (n >= 1e9) return `${fmtDec(n / 1e9, S)} ${b}`
-  if (n >= 1e6) return `${fmtDec(n / 1e6, S)} ${m}`
-  if (n >= 1e4) return `${fmtDec(n / 1e3, S)} ${k}`
+  const units: [number, string][] = [[1e9, S.compact[2]], [1e6, S.compact[1]], [1e3, S.compact[0]]]
+  for (let i = 0; i < units.length; i++) {
+    const [size, unit] = units[i]!
+    if (n < (size === 1e3 ? 1e4 : size)) continue
+    // 999,960 rounds to 1,000 K: say it in the next unit up
+    const bigger = units[i - 1]
+    if (bigger && Math.round((n / size) * 10) / 10 >= 1000) return `${fmtDec(n / bigger[0], S)} ${bigger[1]}`
+    return `${fmtDec(n / size, S)} ${unit}`
+  }
   return fmtInt(n, S)
 }
 
@@ -140,14 +151,38 @@ function modelName(id: string): string {
 const meterColor = (pct: number, accent: string) => (pct >= 90 ? BAD : pct >= 70 ? WARN : accent)
 const accentHex = (id: string) => ACCENTS.find(a => a.id === id)?.hex ?? ACCENTS[0]!.hex
 
+/** Only an http(s) address short enough for a Link; anything else would sink the pane's whole tree */
+function safeUrl(raw: unknown): string {
+  if (typeof raw !== 'string') return ''
+  const url = raw.trim()
+  return /^https?:\/\/\S+$/i.test(url) && url.length <= 2000 ? url : ''
+}
+
 // --- data -----------------------------------------------------------------
+
+/** What the script printed, checked before anything keeps it */
+function isUsageData(x: unknown): x is UsageData {
+  if (!x || typeof x !== 'object') return false
+  const d = x as Partial<UsageData>
+  return (
+    Array.isArray(d.days) &&
+    Array.isArray(d.hours) &&
+    Array.isArray(d.sessions) &&
+    typeof d.generatedAt === 'string' &&
+    typeof d.utcOffsetMinutes === 'number'
+  )
+}
+
+const lastLine = (text: string) => text.trim().split('\n').pop()?.trim() ?? ''
+// What a launcher says when there is no such Python, the Windows Store stub's exit 9009 included
+const NOT_FOUND = /not found|not recognized|cannot find|no such file|microsoft store/i
 
 /** Runs the bundled script with the first Python 3 that answers, and remembers which one did */
 async function runScript($: E): Promise<UsageData> {
   const script = `${$.plugin.root}/scripts/collect_usage.py`
   const saved = await $.store.get('python')
   const candidates: string[][] = [['python3'], ['python'], ['py', '-3']]
-  if (Array.isArray(saved)) candidates.unshift(saved as string[])
+  if (Array.isArray(saved) && saved.every(part => typeof part === 'string')) candidates.unshift(saved as string[])
   for (const cmd of candidates) {
     let run
     try {
@@ -155,55 +190,87 @@ async function runScript($: E): Promise<UsageData> {
     } catch {
       continue // that name does not start here
     }
-    if (run.exitCode === 0 && run.stdout.trimStart().startsWith('{')) {
+    if (run.exitCode === 0) {
+      let parsed: unknown
+      try {
+        parsed = JSON.parse(run.stdout)
+      } catch {
+        parsed = null
+      }
+      if (!isUsageData(parsed)) throw new Error(BAD_OUTPUT)
       await $.store.set('python', cmd)
-      return JSON.parse(run.stdout) as UsageData
+      return parsed
     }
-    // A Python that ran and failed is the answer; a launcher that found nothing is not
-    if (run.stderr.includes('Traceback')) {
-      throw new Error(run.stderr.trim().split('\n').pop() ?? `exit code ${run.exitCode}`)
-    }
+    // A launcher that found nothing tries the next name; a Python that ran and failed is the answer
+    if (run.exitCode === 9009 || (NOT_FOUND.test(run.stderr) && !run.stderr.includes('Traceback'))) continue
+    throw new Error(lastLine(run.stderr) || `exit code ${run.exitCode}`)
   }
   throw new Error(NO_PYTHON)
 }
 
-async function loadLive($: E): Promise<LiveUsage> {
-  const u = await $.session.usage()
-  const live: LiveUsage = {
-    rateLimits: u.rateLimits.map(r => ({ kind: r.kind, percentUsed: r.percentUsed, resetsAt: r.resetsAt ?? null })),
-    contextTokens: u.context.tokens ?? null,
-    contextWindow: u.context.window,
-    contextPercent: u.context.percent ?? null,
-    at: await $.clock.now(),
-  }
-  await keepLive($, live)
-  return live
+type Reading = {
+  rateLimits: readonly { kind: string; percentUsed: number; resetsAt?: string }[]
+  context: { tokens?: number; window: number; percent?: number }
 }
 
-async function keepLive($: E, live: LiveUsage): Promise<void> {
+/** A reading from this session; one without limit windows keeps the last ones it had */
+async function keepReading($: E, r: Reading): Promise<void> {
+  const kept = await read($, liveAtom)
+  const now = await $.clock.now()
+  const isFresh = r.rateLimits.length > 0
+  const live: LiveUsage = {
+    rateLimits: isFresh
+      ? r.rateLimits.map(w => ({ kind: w.kind, percentUsed: w.percentUsed, resetsAt: w.resetsAt ?? null }))
+      : kept?.rateLimits ?? [],
+    limitsAt: isFresh ? now : kept?.limitsAt ?? null,
+    limitsLive: isFresh || (kept?.limitsLive ?? false),
+    contextTokens: r.context.tokens ?? null,
+    contextWindow: r.context.window,
+    contextPercent: r.context.percent ?? null,
+    at: now,
+  }
   await update($, liveAtom, () => live)
   // A new session has no reading until its first reply: it shows the last one meanwhile
-  if (live.rateLimits.length > 0) await $.store.set('limits', { rateLimits: live.rateLimits, at: live.at })
+  if (isFresh) await $.store.set('limits', { rateLimits: live.rateLimits, at: now })
   await showStatus($)
 }
 
-async function refreshAll($: E): Promise<void> {
-  const state = await read($, refreshAtom)
-  if (state.isRunning) return
-  await update($, refreshAtom, r => ({ ...r, isRunning: true, error: null }))
+async function loadLive($: E): Promise<void> {
+  await keepReading($, await $.session.usage())
+}
+
+async function refreshAll($: E, announce: boolean): Promise<void> {
+  const now = await $.clock.now()
+  let isMine = false
+  await update($, refreshAtom, r => {
+    // A run cut short by a reload never cleared its flag: past the script's own limit it is not running
+    const isStuck = r.isRunning && (r.startedAt === null || now - r.startedAt > RUN_LIMIT_MS)
+    isMine = !r.isRunning || isStuck
+    return isMine ? { ...r, isRunning: true, startedAt: now, error: null } : r
+  })
+  if (!isMine) return
   try {
     const data = await runScript($)
     await $.store.set('data', data)
     await update($, dataAtom, () => data)
     await loadLive($).catch(() => null)
-    const now = await $.clock.now()
-    await update($, refreshAtom, () => ({ isRunning: false, lastAt: now, error: null }))
-    const view = await read($, viewAtom)
-    $.ui.toast(STRINGS[view.lang].toastRefreshed)
+    await update($, refreshAtom, r => ({ ...r, isRunning: false, lastAt: now, error: null }))
+    if (announce) $.ui.toast(STRINGS[(await read($, viewAtom)).lang].toastRefreshed)
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     await update($, refreshAtom, r => ({ ...r, isRunning: false, error: message }))
   }
+}
+
+/** The timer's refresh: another open session may already have done it, so the kept data is checked first */
+async function refreshIfStale($: E): Promise<void> {
+  const kept = await $.store.get('data')
+  const now = await $.clock.now()
+  if (isUsageData(kept) && now - Date.parse(kept.generatedAt) < STALE_MS) {
+    await update($, dataAtom, () => kept)
+    return
+  }
+  await refreshAll($, false)
 }
 
 async function setView($: E, fn: (v: CalendarView) => CalendarView): Promise<void> {
@@ -260,6 +327,7 @@ function summarize(days: DayRow[], nowMs: number, offsetMin: number) {
     outputTokens: sum('outputTokens'),
     costUsd: sum('costUsd'),
     isCostPartial: active.some(d => d.costUsd == null || d.isEstimated),
+    unpriced: active.reduce((t, d) => t + (Number(d.unpricedTokens) || 0), 0),
     longest,
     current,
     top,
@@ -287,13 +355,15 @@ function heatmapSvg(
   const unit = S.metrics[metric].unit
   const byDate = new Map(days.map(d => [d.date.slice(0, 10), d]))
   const value = (d: DayRow | undefined) => (d ? Number(d[metric]) || 0 : 0)
-  const max = days.reduce((m, d) => Math.max(m, value(d)), 0)
-  const level = (v: number) => (v <= 0 || !max ? 0 : Math.min(4, Math.ceil((v / max) * 4)))
-
   const now = localDate(nowMs, offsetMin)
   const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
   const weekday = (t: number) => (new Date(t).getUTCDay() + 6) % 7 // Monday = 0
   const start = today - (weekday(today) + (weeks - 1) * 7) * DAY
+
+  // The scale is the shown weeks' own: one busy day long ago must not wash out the rest
+  const first = new Date(start).toISOString().slice(0, 10)
+  const max = days.reduce((m, d) => (d.date >= first ? Math.max(m, value(d)) : m), 0)
+  const level = (v: number) => (v <= 0 || !max ? 0 : Math.min(4, Math.ceil((v / max) * 4)))
 
   const cell = 12
   const step = 15
@@ -378,51 +448,53 @@ function hoursSvg(hours: HourRow[], accent: string, S: Strings): string {
 // --- hooks ----------------------------------------------------------------
 
 export const register: Register = (on, options: PluginOptions) => {
-  const webUrl = typeof options.webUrl === 'string' ? options.webUrl.trim() : ''
+  const webUrl = safeUrl(options.webUrl)
   const webTask = typeof options.webRefreshTask === 'string' ? options.webRefreshTask.trim() : ''
 
   on('session.start', async ($, e, next) => {
-    await $.command.register({ name: COMMAND, description: 'Open the Claude Code Usage Calendar panel' })
     const [view, data, limits] = await Promise.all([$.store.get('view'), $.store.get('data'), $.store.get('limits')])
     if (view && typeof view === 'object') {
       const saved = view as Partial<CalendarView>
       await update($, viewAtom, () => ({ ...DEFAULT_VIEW, ...saved, open: { ...DEFAULT_VIEW.open, ...saved.open } }))
     }
-    if (data && typeof data === 'object') await update($, dataAtom, () => data as UsageData)
-    if (limits && typeof limits === 'object') {
+    const lang = (await read($, viewAtom)).lang
+    await $.command.register({ name: 'usage-calendar', description: STRINGS[lang].commandDescription })
+    if (isUsageData(data)) await update($, dataAtom, () => data)
+    if (limits && typeof limits === 'object' && Array.isArray((limits as { rateLimits?: unknown }).rateLimits)) {
       const kept = limits as { rateLimits: LiveUsage['rateLimits']; at: number }
-      await update($, liveAtom, () => ({ rateLimits: kept.rateLimits, contextTokens: null, contextWindow: null, contextPercent: null, at: kept.at }))
+      await update($, liveAtom, () => ({
+        rateLimits: kept.rateLimits,
+        limitsAt: typeof kept.at === 'number' ? kept.at : null,
+        limitsLive: false,
+        contextTokens: null,
+        contextWindow: null,
+        contextPercent: null,
+        at: kept.at,
+      }))
     }
-    await loadLive($).catch(() => null)
+    // A fresh load starts with no refresh of its own running
+    await update($, refreshAtom, r => ({ ...r, isRunning: false, startedAt: null }))
 
-    // Fresh numbers without a press: at the start when the kept ones are old, then every half hour
-    const generated = data && typeof data === 'object' ? Date.parse((data as UsageData).generatedAt) : 0
-    if (!generated || (await $.clock.now()) - generated > STALE_MS) void refreshAll($)
-    $.clock.every(STALE_MS, () => void refreshAll($))
+    // Headless runs (-p, the SDK, a scheduled task) neither draw nor need fresh numbers
+    if (!e.isInteractive || e.surface === null) return next(e)
+
+    await loadLive($).catch(() => null)
+    void refreshIfStale($)
+    $.clock.every(STALE_MS, () => void refreshIfStale($))
     // Every session opens with the panel; its × closes it for that session alone
     void openPane($)
 
     return next(e)
   })
 
-  on('command.run', { command: COMMAND }, async $ => {
+  on('command.run', { command: 'usage-calendar' }, async $ => {
     await openPane($)
 
-    return { text: 'Usage Calendar opened.' }
+    return { text: STRINGS[(await read($, viewAtom)).lang].opened }
   })
 
   on('session.measure', async ($, e, next) => {
-    const kept = await read($, liveAtom)
-    await keepLive($, {
-      // A reading without windows keeps the last ones it had
-      rateLimits: e.rateLimits.length > 0
-        ? e.rateLimits.map(r => ({ kind: r.kind, percentUsed: r.percentUsed, resetsAt: r.resetsAt ?? null }))
-        : kept?.rateLimits ?? [],
-      contextTokens: e.context.tokens ?? null,
-      contextWindow: e.context.window,
-      contextPercent: e.context.percent ?? null,
-      at: await $.clock.now(),
-    })
+    await keepReading($, e)
 
     return next(e)
   })
@@ -443,9 +515,10 @@ export const register: Register = (on, options: PluginOptions) => {
     const offset = data?.utcOffsetMinutes ?? 0
 
     // Pictures with a size of their own stay that size; the rest fill the slot
-    const picture = (source: string, alt: string, size?: { width: number; height: number }) =>
+    // Only pictures with tooltips get a frame of their own (isInteractive); the rest are plain images
+    const picture = (source: string, alt: string, size?: { width: number; height: number }, hasTips = false) =>
       Svg ? (
-        <Svg source={source} alt={alt} isInteractive width={size?.width} height={size?.height} />
+        <Svg source={source} alt={alt} isInteractive={hasTips || undefined} width={size?.width} height={size?.height} />
       ) : (
         <Text dimColor>{alt}</Text>
       )
@@ -516,15 +589,19 @@ export const register: Register = (on, options: PluginOptions) => {
 
     const actions = (
       <Box flexDirection="row" flexWrap="wrap" gap="sm" alignItems="center">
-        <Button key="refresh" variant="primary" hotkey="r" onPress={() => refreshAll($)}>
+        <Button key="refresh" variant="primary" hotkey="r" onPress={() => refreshAll($, true)}>
           {refresh.isRunning ? S.refreshing : S.refresh}
         </Button>
         {webTask ? (
           <Button
             key="web"
             onPress={async () => {
-              await $.prompt.submit({ text: S.webPrompt(webTask) })
-              $.ui.toast(S.toastWeb)
+              try {
+                await $.prompt.submit({ text: S.webPrompt(webTask) })
+                $.ui.toast(S.toastWeb)
+              } catch {
+                $.ui.toast(S.webFailed)
+              }
             }}
           >
             {S.webUpdate}
@@ -534,7 +611,9 @@ export const register: Register = (on, options: PluginOptions) => {
       </Box>
     )
     const failure = refresh.error ? (
-      <Text color="error">{refresh.error === NO_PYTHON ? S.noPython : S.refreshFailed(refresh.error)}</Text>
+      <Text color="error">
+        {refresh.error === NO_PYTHON ? S.noPython : refresh.error === BAD_OUTPUT ? S.badOutput : S.refreshFailed(refresh.error)}
+      </Text>
     ) : null
 
     if (!data) {
@@ -550,6 +629,20 @@ export const register: Register = (on, options: PluginOptions) => {
 
     const selfId = await $.session.id().catch(() => '')
     const s = summarize(data.days, now, offset)
+    // What the heatmap shows, in words for a reader that can't see it
+    const shown = (() => {
+      const today = localDate(now, offset)
+      const from = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()) - view.weeks * 7 * DAY)
+        .toISOString()
+        .slice(0, 10)
+      const inRange = data.days.filter(d => d.date >= from && (Number(d[view.metric]) || 0) > 0)
+      const value = (d: DayRow) => Number(d[view.metric]) || 0
+      return {
+        total: inRange.reduce((t, d) => t + value(d), 0),
+        activeDays: inRange.length,
+        best: inRange.reduce<DayRow | null>((a, d) => (!a || value(d) > value(a) ? d : a), null),
+      }
+    })()
     // [label, value, line under it]
     const tiles: [string, string, string | null][] = [
       [S.tiles.activeDays, fmtInt(s.activeDays, S), null],
@@ -568,10 +661,16 @@ export const register: Register = (on, options: PluginOptions) => {
       [S.tokenStats[3], fmtUsd(s.costUsd, S)],
     ]
 
-    // Live readings from this session; a kept one from an earlier session until the first reply
-    const isLiveNow = !!live && live.contextWindow !== null
+    // Live once this session has a reading of its own; until then the one kept from an earlier session
     const limitRows = (live?.rateLimits ?? []).map(r => ({ name: S.limitNames[r.kind] ?? r.kind, pct: r.percentUsed, resetsAt: r.resetsAt }))
-    const limitNote = limitRows.length === 0 ? S.noReading : isLiveNow ? S.live : S.asOf(fmtStamp(live!.at, offset, S, lang))
+    const limitNote =
+      limitRows.length === 0
+        ? S.noReading
+        : live?.limitsLive
+          ? S.live
+          : live?.limitsAt
+            ? S.asOf(fmtStamp(live.limitsAt, offset, S, lang))
+            : S.noReading
 
     // This session's row comes live from the engine; the script's copy of it is older
     const selfRow = data.sessions.find(r => r.session === selfId)
@@ -636,7 +735,12 @@ export const register: Register = (on, options: PluginOptions) => {
             <Box flexDirection="row" alignItems="center" gap="xs">
               <Text dimColor size="caption">{S.color}</Text>
               {ACCENTS.map(a => (
-                <Button key={`accent-${a.id}`} plain onPress={() => setView($, v => ({ ...v, accent: a.id }))}>
+                <Button
+                  key={`accent-${a.id}`}
+                  label={`${S.color}: ${S.colorNames[a.id] ?? a.id}`}
+                  plain
+                  onPress={() => setView($, v => ({ ...v, accent: a.id }))}
+                >
                   <Text color={a.hex}>{a.id === view.accent ? '◉' : '●'}</Text>
                 </Button>
               ))}
@@ -658,7 +762,15 @@ export const register: Register = (on, options: PluginOptions) => {
           </Box>
           {picture(
             heatmapSvg(data.days, view.metric, view.weeks, now, offset, accent, S, lang),
-            S.heatAlt(view.weeks === 26 ? 6 : 12, S.metrics[view.metric].unit),
+            S.heatAlt(
+              view.weeks === 26 ? 6 : 12,
+              S.metrics[view.metric].unit,
+              fmtInt(shown.total, S),
+              shown.activeDays,
+              shown.best ? fmtDay(shown.best.date, S, lang) : null,
+            ),
+            undefined,
+            true,
           )}
           <Box flexDirection="row" justifyContent="space-between" alignItems="center">
             <Text dimColor size="caption">{S.hoverHint}</Text>
@@ -666,7 +778,7 @@ export const register: Register = (on, options: PluginOptions) => {
           </Box>
         </Box>
 
-        {card('tokens', titles.tokens, S.allTime, S.tokensDesc(s.isCostPartial), () => (
+        {card('tokens', titles.tokens, S.allTime, S.tokensDesc(s.isCostPartial, s.unpriced > 0 ? fmtCompact(s.unpriced, S) : null), () => (
           <Box flexDirection="row" flexWrap="wrap" gap="md">
             {tokenStats.map(([label, value]) => (
               <Box key={`tok-${label}`} flexDirection="column" minWidth={11} flexGrow={1}>
@@ -716,7 +828,7 @@ export const register: Register = (on, options: PluginOptions) => {
           </Box>
         ))}
 
-        {card('hours', titles.hours, S.localTime, S.hoursDesc, () => picture(hoursSvg(data.hours, accent, S), S.hoursAlt))}
+        {card('hours', titles.hours, S.localTime, S.hoursDesc, () => picture(hoursSvg(data.hours, accent, S), S.hoursAlt, undefined, true))}
 
         {card('days', titles.days, S.days(s.activeDays), S.daysDesc, () => <Markdown text={daysTable} />)}
 

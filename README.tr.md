@@ -26,7 +26,7 @@
 
 **Canlı kullanım limitleri.** Planının 5 saatlik ve haftalık limitlerinden ne kadarının kullanıldığı ve ne zaman sıfırlanacağı. Rakamlar doğrudan Claude Code'dan gelir, sen çalıştıkça güncellenir.
 
-**Oturum başına bağlam doluluğu.** Son 24 saatteki her oturum ve bağlam penceresinin ne kadar dolu olduğu. İçinde olduğun oturum canlı güncellenir.
+**Oturum başına bağlam doluluğu.** Son 24 saatte kullanılan oturumlar ve masaüstü uygulamasında hâlâ açık duran son bir haftanın oturumları; her birinin bağlam penceresinin ne kadar dolu olduğu. İçinde olduğun oturum canlı güncellenir.
 
 **Token detayları.** Giriş, çıkış ve toplam token; aynı kullanımın API liste fiyatlarıyla tahmini maliyeti.
 
@@ -44,7 +44,7 @@
 
 ## Kurulum
 
-**Claude Code 2.1.308 ya da üstü** ve **Python 3** gerekir (`python3`, `python` ya da `py` komutlarından biri). Panel grafikleri Claude masaüstü uygulamasında çizer; terminalde aynı rakamları yazı olarak gösterir.
+**Claude Code 2.1.308 ya da üstü** ve **Python 3** gerekir (`python3`, `python` ya da `py` komutlarından biri). Panel grafikleri Claude masaüstü uygulamasında çizer; terminalde kutucukları, tabloları ve limitleri gösterir, grafikleri ise tek satırlık bir yazıyla anlatır.
 
 Claude Code terminal oturumunda:
 
@@ -62,7 +62,7 @@ Masaüstü uygulamasında `/plugin` çalışmaz: istem kutusunun yanındaki **+*
 
 ## Kullanım
 
-- Panel her oturumda kendiliğinden açılır. × onu yalnızca o oturum için kapatır. Yeniden açmak için mesaj kutusuna `/` yaz ve komut menüsünden `/usage-calendar`ı seç. Mesaj kutusunun altındaki durum satırı bu komutu hatırlatır ve 5 saatlik ile haftalık limitlerini gösterir (oturumdaki ilk yanıttan sonra görünür).
+- Panel her oturumda kendiliğinden açılır. × onu yalnızca o oturum için kapatır. Yeniden açmak için mesaj kutusuna `/` yaz ve komut menüsünden `/usage-calendar`ı seç. Mesaj kutusunun altındaki durum satırı bu komutu hatırlatır ve 5 saatlik ile haftalık limitlerini gösterir (oturumdaki ilk yanıta kadar önceki bir oturumun son okumasını gösterir).
 - **Refresh / Yenile** (panel klavyedeyken `R`) kullanımı yeniden sayar. Ayrıca oturum başında ve her 30 dakikada bir kendiliğinden yenilenir.
 - **TR / EN** dili, **Renk** yanındaki noktalar vurgu rengini değiştirir; bölüm başlıkları bölümü açıp kapatır.
 
@@ -73,13 +73,13 @@ Masaüstü uygulamasında `/plugin` çalışmaz: istem kutusunun yanındaki **+*
 | Ayar | Ne yapar |
 |---|---|
 | `webUrl` | Panonun web sürümünün bağlantısı. Panelde **Web'de aç** bağlantısı çıkar. |
-| `webRefreshTask` | O web sürümünü yenileyen Claude Code zamanlanmış görevinin adı. **Web'i de güncelle** düğmesi çıkar. |
+| `webRefreshTask` | O web sürümünü yenileyen Claude Code zamanlanmış görevinin kimliği (id). **Web'i de güncelle** düğmesi çıkar. |
 
 Web sürümünün nasıl kurulacağı [docs/web-dashboard.md](docs/web-dashboard.md) dosyasında.
 
 ## Gizlilik
 
-- Her şey senin bilgisayarında çalışır. Panel Claude Code'un `~/.claude` altındaki kendi dosyalarını (oturum dökümleri ve `stats-cache.json`) ve masaüstü uygulamasının oturum listesini okur, rakamları eklentinin yerel deposunda tutar. Hiçbir şey dışarı gönderilmez.
+- Her şey senin bilgisayarında çalışır. Panel Claude Code'un `~/.claude` altındaki kendi dosyalarını (oturum dökümleri ve `stats-cache.json`) ve masaüstü uygulamasının oturum listesini okur, rakamları eklentinin yerel deposunda tutar. Panel hiçbir şey yüklemez. Yalnızca isteğe bağlı web panosu ([docs/web-dashboard.md](docs/web-dashboard.md)) rakamları, oturum başlıklarını ve oturum kimliklerini claude.ai'de, sen paylaşmadıkça yalnızca sana açık bir sayfaya koyar.
 - Script mesajları, araç çağrılarını ve tokenları sayar, oturum başlıklarını okur. Senin ya da Claude'un yazdıklarını okumaz. Tek istisna: isteğe bağlı web yenileme görevinin kendi oturumlarını rakamlardan çıkarmak için `[usage-calendar-refresh]` işaretine bakar.
 - Limitler ve bağlam doluluğu eklenti arayüzü üzerinden doğrudan Claude Code'dan gelir.
 
@@ -89,6 +89,16 @@ Web sürümünün nasıl kurulacağı [docs/web-dashboard.md](docs/web-dashboard
 - **Token**, her yanıtın girişi, önbellek yazma ve okuması ile çıkışının toplamıdır; her yanıt bir kez sayılır.
 - **Tahmini maliyet** model başına API liste fiyatlarını kullanır; önbellek yazma, giriş fiyatının 1,25 (5 dakika) ya da 2 (1 saat) katıdır. Abonelik planlarında bu ayrıca ödenmez; aynı kullanımın API'de ne tutacağını gösterir.
 - Claude Code eski dökümleri bir süre sonra siler. O günler için yalnızca `stats-cache.json`'daki toplamlar kalır; giriş/çıkış dağılımları genel oranlarından tahmin edilir ve panel bunu belirtir.
+
+## Geliştirme
+
+```bash
+claude plugin validate .
+claude plugin test .
+python -m unittest discover -s tests -p "test_*.py"
+```
+
+İlki manifest ve hook'ları denetler, ikincisi panelin testlerini, üçüncüsü veri script'inin testlerini çalıştırır.
 
 ## Sınırlar
 

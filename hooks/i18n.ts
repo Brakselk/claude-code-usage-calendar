@@ -34,7 +34,7 @@ export type Strings = {
   daily: string
   metrics: Record<Metric, { label: string; unit: string }>
   showMonths: (n: number) => string
-  heatAlt: (months: number, unit: string) => string
+  heatAlt: (months: number, unit: string, total: string, activeDays: number, best: string | null) => string
   hoverHint: string
   legendAlt: string
   less: string
@@ -68,7 +68,7 @@ export type Strings = {
   daysHead: string[]
   allTime: string
   tokenStats: [string, string, string, string]
-  tokensDesc: (partial: boolean) => string
+  tokensDesc: (partial: boolean, unpriced: string | null) => string
   footer: string
   months: string[]
   monthsLong: string[]
@@ -83,6 +83,12 @@ export type Strings = {
   loading: string
   statusHint: string
   statusLimits: Record<string, string>
+  paneTitle: string
+  commandDescription: string
+  opened: string
+  badOutput: string
+  webFailed: string
+  colorNames: Record<string, string>
 }
 
 export const STRINGS: Record<Lang, Strings> = {
@@ -125,7 +131,8 @@ export const STRINGS: Record<Lang, Strings> = {
       tokens: { label: 'Tokens', unit: 'tokens' },
     },
     showMonths: n => `Show ${n} months`,
-    heatAlt: (m, u) => `Daily ${u} over the last ${m} months`,
+    heatAlt: (m, u, total, days, best) =>
+      `Daily ${u} over the last ${m} months: ${total} on ${days} active ${days === 1 ? 'day' : 'days'}${best ? `, most on ${best}` : ''}`,
     hoverHint: 'Hover a square to see that day',
     legendAlt: 'Color scale from less to more',
     less: 'Less',
@@ -137,7 +144,7 @@ export const STRINGS: Record<Lang, Strings> = {
     noReading: 'no reading yet',
     limitsDesc: "How much of your plan's 5-hour and weekly limits is used.",
     limitsHead: ['Limit', 'Used', 'Resets'],
-    limitNames: { five_hour: '5-hour limit', seven_day: 'Weekly · all models' },
+    limitNames: { five_hour: '5-hour limit', seven_day: 'Weekly · all models', spend_limit: 'Spend limit' },
     resetDone: 'Reset',
     noLimits: 'No reading yet; it arrives with the first reply in this session.',
     used: p => `${p}% used`,
@@ -160,8 +167,8 @@ export const STRINGS: Record<Lang, Strings> = {
     daysHead: ['Date', 'Messages', 'Prompts', 'Sessions', 'Tools', 'Tokens', 'Model'],
     allTime: 'all time',
     tokenStats: ['Input tokens', 'Output tokens', 'Total tokens', 'Est. cost'],
-    tokensDesc: p =>
-      `Estimated at API list prices; subscription plans don't bill this.${p ? ' Days whose transcripts were deleted are split from their totals.' : ''}`,
+    tokensDesc: (p, unpriced) =>
+      `Estimated at API list prices; subscription plans don't bill this.${p ? ' Days whose transcripts were deleted are estimated from Claude Code’s own totals.' : ''}${unpriced ? ` ${unpriced} tokens of models without a known price are left out of the cost.` : ''}`,
     footer: 'Only Claude Code sessions on this computer. claude.ai chats are not included.',
     months: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
     monthsLong: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'],
@@ -174,7 +181,13 @@ export const STRINGS: Record<Lang, Strings> = {
     units: { min: 'm', hour: 'h', day: 'd' },
     loading: 'Reading usage data…',
     statusHint: 'Usage Calendar: /usage-calendar',
-    statusLimits: { five_hour: '5h', seven_day: 'week' },
+    statusLimits: { five_hour: '5h', seven_day: 'week', spend_limit: 'spend' },
+    paneTitle: 'Usage Calendar',
+    commandDescription: 'Open the Claude Code Usage Calendar panel',
+    opened: 'Usage Calendar opened.',
+    badOutput: 'The usage script answered with something unexpected. Press Refresh to try again.',
+    webFailed: 'Could not ask for the web update',
+    colorNames: { clay: 'Clay', ocean: 'Ocean', forest: 'Forest', violet: 'Violet', rose: 'Rose', amber: 'Amber', teal: 'Teal' },
   },
   tr: {
     title: 'Claude Code Kullanım Takvimi',
@@ -215,7 +228,8 @@ export const STRINGS: Record<Lang, Strings> = {
       tokens: { label: 'Token', unit: 'token' },
     },
     showMonths: n => `${n} ayı göster`,
-    heatAlt: (m, u) => `Son ${m} ayda günlük ${u} sayısı`,
+    heatAlt: (m, u, total, days, best) =>
+      `Son ${m} ayda günlük ${u} sayısı: ${days} aktif günde ${total}${best ? `, en çok ${best}` : ''}`,
     hoverHint: 'Kareye gelince günün sayısı görünür',
     legendAlt: 'Az ile çok arası renk ölçeği',
     less: 'Az',
@@ -227,7 +241,7 @@ export const STRINGS: Record<Lang, Strings> = {
     noReading: 'henüz okuma yok',
     limitsDesc: 'Planının 5 saatlik ve haftalık limitlerinden ne kadarı kullanılmış.',
     limitsHead: ['Limit', 'Kullanılan', 'Sıfırlanma'],
-    limitNames: { five_hour: '5 saatlik limit', seven_day: 'Haftalık · tüm modeller' },
+    limitNames: { five_hour: '5 saatlik limit', seven_day: 'Haftalık · tüm modeller', spend_limit: 'Harcama limiti' },
     resetDone: 'Sıfırlandı',
     noLimits: 'Henüz limit bilgisi yok; bu oturumdaki ilk yanıtla gelir.',
     used: p => `%${p} kullanıldı`,
@@ -250,8 +264,8 @@ export const STRINGS: Record<Lang, Strings> = {
     daysHead: ['Tarih', 'Mesaj', 'İstem', 'Oturum', 'Araç', 'Token', 'Model'],
     allTime: 'tüm kayıtlar',
     tokenStats: ['Giriş token', 'Çıkış token', 'Toplam token', 'Tahmini maliyet'],
-    tokensDesc: p =>
-      `Tahmini maliyet API liste fiyatlarıyla hesaplandı; abonelik planlarında ayrıca ödenmez.${p ? ' Dökümü silinmiş günlerin dağılımı toplamdan tahmin edildi.' : ''}`,
+    tokensDesc: (p, unpriced) =>
+      `Tahmini maliyet API liste fiyatlarıyla hesaplandı; abonelik planlarında ayrıca ödenmez.${p ? ' Dökümü silinmiş günler Claude Code’un kendi toplamlarından tahmin edildi.' : ''}${unpriced ? ` Fiyatı bilinmeyen modellerin ${unpriced} tokenı maliyete katılmadı.` : ''}`,
     footer: 'Yalnızca bu bilgisayardaki Claude Code oturumları. claude.ai sohbetleri dahil değil.',
     months: ['Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz', 'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara'],
     monthsLong: ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'],
@@ -264,6 +278,12 @@ export const STRINGS: Record<Lang, Strings> = {
     units: { min: 'dk', hour: 'sa', day: 'gün' },
     loading: 'Kullanım verileri okunuyor…',
     statusHint: 'Kullanım Takvimi: /usage-calendar',
-    statusLimits: { five_hour: '5 saat', seven_day: 'haftalık' },
+    statusLimits: { five_hour: '5 saat', seven_day: 'haftalık', spend_limit: 'harcama' },
+    paneTitle: 'Kullanım Takvimi',
+    commandDescription: 'Claude Code Kullanım Takvimi panelini açar',
+    opened: 'Kullanım Takvimi açıldı.',
+    badOutput: "Kullanım script'i beklenmedik bir yanıt verdi. Yeniden denemek için Yenile'ye bas.",
+    webFailed: 'Web güncellemesi istenemedi',
+    colorNames: { clay: 'Kil', ocean: 'Okyanus', forest: 'Orman', violet: 'Mor', rose: 'Gül', amber: 'Kehribar', teal: 'Turkuaz' },
   },
 }

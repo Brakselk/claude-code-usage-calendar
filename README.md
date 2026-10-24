@@ -26,7 +26,7 @@
 
 **Usage limits, live.** Your plan's 5-hour and weekly limits with how much is used and when each resets. The numbers come straight from Claude Code and move as you work.
 
-**Context fill per session.** Every session from the last 24 hours, with how full its context window is. The one you are in updates live.
+**Context fill per session.** Every session used in the last 24 hours, plus the ones still open in the desktop app from the past week, with how full each context window is. The one you are in updates live.
 
 **Token details.** Input, output and total tokens, plus what the same usage would cost at API list prices.
 
@@ -44,7 +44,7 @@
 
 ## Install
 
-You need **Claude Code 2.1.308 or later** and **Python 3** (`python3`, `python` or `py` on your PATH). The panel draws its charts in the Claude desktop app; in a terminal it shows the same numbers as text.
+You need **Claude Code 2.1.308 or later** and **Python 3** (`python3`, `python` or `py` on your PATH). The panel draws its charts in the Claude desktop app; in a terminal it shows the tiles, tables and limits, and describes the charts in a line of text.
 
 At the prompt of a Claude Code terminal session:
 
@@ -62,7 +62,7 @@ In the desktop app, where `/plugin` does not run: click **+** next to the prompt
 
 ## Use
 
-- The panel opens by itself in every session. Its × closes it for that session only. To open it again, type `/` in the prompt box and pick `/usage-calendar` from the command menu. The status line under the prompt box reminds you of that command and shows your 5-hour and weekly limits (it appears after the first reply in a session).
+- The panel opens by itself in every session. Its × closes it for that session only. To open it again, type `/` in the prompt box and pick `/usage-calendar` from the command menu. The status line under the prompt box reminds you of that command and shows your 5-hour and weekly limits (until a session's first reply, the last reading from an earlier session).
 - **Refresh** (or `R` while the panel has the keyboard) recounts your usage. It also refreshes on its own at the start of a session and every 30 minutes.
 - **TR / EN** switches the language, the dots next to **Color** switch the accent, and each section title opens or closes it.
 
@@ -79,7 +79,7 @@ How to make that web version is in [docs/web-dashboard.md](docs/web-dashboard.md
 
 ## Privacy
 
-- Everything runs on your computer. The panel reads Claude Code's own files under `~/.claude` (session transcripts and `stats-cache.json`) and the desktop app's session list, and keeps its numbers in the plugin's local store. Nothing is uploaded.
+- Everything runs on your computer. The panel reads Claude Code's own files under `~/.claude` (session transcripts and `stats-cache.json`) and the desktop app's session list, and keeps its numbers in the plugin's local store. The panel uploads nothing. Only the optional web dashboard ([docs/web-dashboard.md](docs/web-dashboard.md)) puts numbers, session titles and session ids on claude.ai, in a page that is private to you unless you share it.
 - The script counts messages, tool calls and tokens and reads session titles. It does not read what you or Claude wrote. The one exception: it looks for the marker `[usage-calendar-refresh]` so that the optional web-refresh task's own sessions are left out of your numbers.
 - Limits and context fill come from Claude Code itself, through the plugin API.
 
@@ -89,6 +89,16 @@ How to make that web version is in [docs/web-dashboard.md](docs/web-dashboard.md
 - **Tokens** add up input, cache writes, cache reads and output for each reply, once per reply.
 - **Estimated cost** uses API list prices per model, with cache writes at 1.25× (5-minute) or 2× (1-hour) the input price. Subscription plans don't bill this; it shows what the same usage would cost on the API.
 - Claude Code deletes old transcripts after a while. For those days only the totals in `stats-cache.json` remain, so their input/output split is estimated from your overall shares, and the panel says so.
+
+## Development
+
+```bash
+claude plugin validate .
+claude plugin test .
+python -m unittest discover -s tests -p "test_*.py"
+```
+
+The first checks the manifest and hooks, the second runs the panel's tests, the third the data script's.
 
 ## Limitations
 
