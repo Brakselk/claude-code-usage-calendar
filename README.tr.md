@@ -44,7 +44,7 @@
 
 ## Kurulum
 
-**Claude Code 2.1.308 ya da üstü** ve **Python 3** gerekir (`python3`, `python` ya da `py` komutlarından biri). Panel grafikleri Claude masaüstü uygulamasında çizer; terminalde kutucukları, tabloları ve limitleri gösterir, grafikleri ise tek satırlık bir yazıyla anlatır.
+**Claude Code 2.1.308 ya da üstü** ve **Python 3.7 ya da üstü** gerekir (`python3`, `python` ya da `py` komutlarından biri). Panel grafikleri Claude masaüstü uygulamasında çizer; terminalde kutucukları, tabloları ve limitleri gösterir, grafikleri ise tek satırlık bir yazıyla anlatır.
 
 Claude Code terminal oturumunda:
 
@@ -62,33 +62,45 @@ Masaüstü uygulamasında `/plugin` çalışmaz: istem kutusunun yanındaki **+*
 
 ## Kullanım
 
-- Panel her oturumda kendiliğinden açılır. × onu yalnızca o oturum için kapatır. Yeniden açmak için mesaj kutusuna `/` yaz ve komut menüsünden `/usage-calendar`ı seç. Mesaj kutusunun altındaki durum satırı bu komutu hatırlatır ve 5 saatlik ile haftalık limitlerini gösterir (oturumdaki ilk yanıta kadar önceki bir oturumun son okumasını gösterir).
-- **Refresh / Yenile** (panel klavyedeyken `R`) kullanımı yeniden sayar. Ayrıca oturum başında ve her 30 dakikada bir kendiliğinden yenilenir.
+- Panel, oturum bir pencerede (masaüstü uygulamasında ya da terminalde) açıldığında kendiliğinden açılır. × onu o oturum için kapatır; eklenti yeniden yüklense de kapalı kalır. Yeniden açmak için mesaj kutusuna `/` yaz ve komut menüsünden `/usage-calendar`ı seç. Mesaj kutusunun altındaki durum satırı bu komutu hatırlatır ve 5 saatlik ile haftalık limitlerini gösterir (oturumdaki ilk yanıta kadar önceki bir oturumun son okumasını gösterir).
+- **Refresh / Yenile** (panel klavyedeyken `R`) kullanımı yeniden sayar. Ayrıca tuttuğu rakamlar 30 dakikadan eskiyse kendiliğinden yenilenir. Bu, oturum bir pencerede açıldığında ve her 30 dakikada bir denetlenir; sayımı aynı anda yalnızca bir açık oturum çalıştırır.
 - **TR / EN** dili, **Renk** yanındaki noktalar vurgu rengini değiştirir; bölüm başlıkları bölümü açıp kapatır.
 
 ## Ayarlar
 
-İkisi de isteğe bağlı ve varsayılan olarak boş. `/config` altında eklentinin satırından ya da kurulumda ayarlanır.
+İkisi de isteğe bağlı ve varsayılan olarak boş. Claude Code terminal oturumunda şununla ayarlanır:
+
+```
+/plugin configure usage-calendar@claude-code-usage-calendar
+```
+
+Ya da kabuktan kurarken ayarlanır:
+
+```bash
+claude plugin install usage-calendar --marketplace Brakselk/claude-code-usage-calendar --config webUrl=<bağlantı> --config webRefreshTask=<görev-kimliği>
+```
+
+Kabukta `claude plugin configure usage-calendar@claude-code-usage-calendar` ayarları ve hangilerinin boş olduğunu listeler; `--values-stdin` ile stdin'den okunan bir JSON nesnesindeki değerleri kaydeder.
 
 | Ayar | Ne yapar |
 |---|---|
 | `webUrl` | Panonun web sürümünün bağlantısı. Panelde **Web'de aç** bağlantısı çıkar. |
 | `webRefreshTask` | O web sürümünü yenileyen Claude Code zamanlanmış görevinin kimliği (id). **Web'i de güncelle** düğmesi çıkar. |
 
-Web sürümünün nasıl kurulacağı [docs/web-dashboard.md](docs/web-dashboard.md) dosyasında.
+Web sürümünün nasıl kurulacağı [docs/web-dashboard.tr.md](docs/web-dashboard.tr.md) dosyasında.
 
 ## Gizlilik
 
-- Her şey senin bilgisayarında çalışır. Panel Claude Code'un `~/.claude` altındaki kendi dosyalarını (oturum dökümleri ve `stats-cache.json`) ve masaüstü uygulamasının oturum listesini okur, rakamları eklentinin yerel deposunda tutar. Panel hiçbir şey yüklemez. Yalnızca isteğe bağlı web panosu ([docs/web-dashboard.md](docs/web-dashboard.md)) rakamları, oturum başlıklarını ve oturum kimliklerini claude.ai'de, sen paylaşmadıkça yalnızca sana açık bir sayfaya koyar.
-- Script mesajları, araç çağrılarını ve tokenları sayar, oturum başlıklarını okur. Senin ya da Claude'un yazdıklarını okumaz. Tek istisna: isteğe bağlı web yenileme görevinin kendi oturumlarını rakamlardan çıkarmak için `[usage-calendar-refresh]` işaretine bakar.
+- Her şey senin bilgisayarında çalışır. Panel Claude Code'un `~/.claude` altındaki kendi dosyalarını (oturum dökümleri ve `stats-cache.json`) ve masaüstü uygulamasının oturum listesini okur, rakamları eklentinin yerel deposunda tutar. Panel hiçbir şey yüklemez. Yalnızca isteğe bağlı web panosu ([docs/web-dashboard.tr.md](docs/web-dashboard.tr.md)) rakamları, oturum başlıklarını ve oturum kimliklerini claude.ai'de, sen paylaşmadıkça yalnızca sana açık bir sayfaya koyar.
+- Script mesajları, istemleri, araç çağrılarını ve tokenları saymak için döküm satırlarını bellekte okur, oturum başlıklarını da okur. İstem metnine yalnızca iki şey için bakar: senin yazdığın istemleri sistem satırlarından ayırmak ve isteğe bağlı web yenileme görevinin kendi oturumlarını rakamlardan çıkarmak için `[usage-calendar-refresh]` işaretini bulmak. Mesaj metnini hiçbir zaman saklamaz, yazdırmaz ya da yüklemez: çıktısında rakamlar, model adları, oturum kimlikleri ve oturum başlıkları bulunur.
 - Limitler ve bağlam doluluğu eklenti arayüzü üzerinden doğrudan Claude Code'dan gelir.
 
 ## Rakamlar nasıl sayılıyor
 
-- **Mesaj**, bir oturumda senin ve Claude'un yazdığı her satırdır, araç sonuçları dahil. **İstem** yalnızca senin yazdığın mesajlardır.
+- **Mesaj**, bir oturumda senin ve Claude'un yazdığı her satırdır, araç sonuçları dahil. **İstem** yalnızca senin yazdığın mesajlardır. Claude Code bir satırı senin yazdığın olarak işaretlediyse (`origin` alanı) script bu işareti kullanır; işareti olmayan satırlar metinlerine göre ayırt edilir.
 - **Token**, her yanıtın girişi, önbellek yazma ve okuması ile çıkışının toplamıdır; her yanıt bir kez sayılır.
 - **Tahmini maliyet** model başına API liste fiyatlarını kullanır; önbellek yazma, giriş fiyatının 1,25 (5 dakika) ya da 2 (1 saat) katıdır. Abonelik planlarında bu ayrıca ödenmez; aynı kullanımın API'de ne tutacağını gösterir.
-- Claude Code eski dökümleri bir süre sonra siler. O günler için yalnızca `stats-cache.json`'daki toplamlar kalır; giriş/çıkış dağılımları genel oranlarından tahmin edilir ve panel bunu belirtir.
+- Claude Code eski dökümleri bir süre sonra siler. O günler için yalnızca `stats-cache.json`'daki toplamlar kalır ve bunlar dökümlerle aynı biçimde sayılmaz. Bu yüzden script bu toplamları, ikisinin de bulunduğu günlerde ölçülen oranla ölçekler, giriş/çıkış dağılımlarını genel oranlarından tahmin eder ve o günleri tahmini olarak işaretler. Günün saatlerine göre dağılım yalnızca dökümleri duran günleri kapsar.
 
 ## Geliştirme
 

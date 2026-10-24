@@ -40,6 +40,8 @@ function engine(on: any, answer: () => Run | Promise<Run>, opts: { store?: Recor
   on('ui.status', () => ({ value: undefined }))
   on('session.start', (_: unknown, e: { cwd: string }) => ({ cwd: e.cwd }))
   on('session.id', () => ({ value: 'self' }))
+  on('session.surfaces', () => ({ value: [] }))
+  on('fs.stat', () => ({ value: { kind: 'file', size: 1, mtimeMs: 0 } }))
   on('session.usage', () => ({
     value: { startedAt: 0, context: { tokens: 1000, window: 1_000_000, percent: 0 }, rateLimits: opts.rateLimits ?? [] },
   }))

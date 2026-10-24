@@ -78,6 +78,8 @@ declare module 'claude-code' {
       live: LiveUsage | null
       view: CalendarView
       refresh: RefreshState
+      /** This session's panel: opened once already (a reload doesn't reopen it), closed by × */
+      ui: { started: boolean; closed: boolean }
     }
   }
 }

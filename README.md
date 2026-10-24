@@ -44,7 +44,7 @@
 
 ## Install
 
-You need **Claude Code 2.1.308 or later** and **Python 3** (`python3`, `python` or `py` on your PATH). The panel draws its charts in the Claude desktop app; in a terminal it shows the tiles, tables and limits, and describes the charts in a line of text.
+You need **Claude Code 2.1.308 or later** and **Python 3.7 or later** (`python3`, `python` or `py` on your PATH). The panel draws its charts in the Claude desktop app; in a terminal it shows the tiles, tables and limits, and describes the charts in a line of text.
 
 At the prompt of a Claude Code terminal session:
 
@@ -62,13 +62,25 @@ In the desktop app, where `/plugin` does not run: click **+** next to the prompt
 
 ## Use
 
-- The panel opens by itself in every session. Its × closes it for that session only. To open it again, type `/` in the prompt box and pick `/usage-calendar` from the command menu. The status line under the prompt box reminds you of that command and shows your 5-hour and weekly limits (until a session's first reply, the last reading from an earlier session).
-- **Refresh** (or `R` while the panel has the keyboard) recounts your usage. It also refreshes on its own at the start of a session and every 30 minutes.
+- The panel opens by itself when a session opens in a window, in the desktop app or a terminal. Its × closes it for that session, and it stays closed even if the plugin reloads. To open it again, type `/` in the prompt box and pick `/usage-calendar` from the command menu. The status line under the prompt box reminds you of that command and shows your 5-hour and weekly limits (until a session's first reply, the last reading from an earlier session).
+- **Refresh** (or `R` while the panel has the keyboard) recounts your usage. It also refreshes on its own when the numbers it keeps are more than 30 minutes old. That is checked when a session opens in a window and every 30 minutes, and only one open session runs the count at a time.
 - **TR / EN** switches the language, the dots next to **Color** switch the accent, and each section title opens or closes it.
 
 ## Settings
 
-Both are optional and empty by default. Set them in `/config` under the plugin, or when you install it.
+Both are optional and empty by default. In a Claude Code terminal session, set them with:
+
+```
+/plugin configure usage-calendar@claude-code-usage-calendar
+```
+
+Or set them when you install from a shell:
+
+```bash
+claude plugin install usage-calendar --marketplace Brakselk/claude-code-usage-calendar --config webUrl=<link> --config webRefreshTask=<task-id>
+```
+
+From a shell, `claude plugin configure usage-calendar@claude-code-usage-calendar` lists the options and which are unset; with `--values-stdin` it saves the values in a JSON object read from stdin.
 
 | Setting | What it does |
 |---|---|
@@ -80,15 +92,15 @@ How to make that web version is in [docs/web-dashboard.md](docs/web-dashboard.md
 ## Privacy
 
 - Everything runs on your computer. The panel reads Claude Code's own files under `~/.claude` (session transcripts and `stats-cache.json`) and the desktop app's session list, and keeps its numbers in the plugin's local store. The panel uploads nothing. Only the optional web dashboard ([docs/web-dashboard.md](docs/web-dashboard.md)) puts numbers, session titles and session ids on claude.ai, in a page that is private to you unless you share it.
-- The script counts messages, tool calls and tokens and reads session titles. It does not read what you or Claude wrote. The one exception: it looks for the marker `[usage-calendar-refresh]` so that the optional web-refresh task's own sessions are left out of your numbers.
+- The script reads transcript rows in memory to count messages, prompts, tool calls and tokens, and reads session titles. It looks at prompt text only to tell your typed prompts from system rows, and to find the marker `[usage-calendar-refresh]` so that the optional web-refresh task's own sessions are left out of your numbers. It never keeps, prints or uploads message text: its output holds numbers, model names, session ids and session titles.
 - Limits and context fill come from Claude Code itself, through the plugin API.
 
 ## How the numbers are counted
 
-- **Messages** are every line you and Claude wrote in a session, tool results included. **Prompts** are only the messages you typed.
+- **Messages** are every line you and Claude wrote in a session, tool results included. **Prompts** are only the messages you typed. Where Claude Code marks a row as typed by you (its `origin` field), the script uses that mark; rows without it are judged by their text.
 - **Tokens** add up input, cache writes, cache reads and output for each reply, once per reply.
 - **Estimated cost** uses API list prices per model, with cache writes at 1.25× (5-minute) or 2× (1-hour) the input price. Subscription plans don't bill this; it shows what the same usage would cost on the API.
-- Claude Code deletes old transcripts after a while. For those days only the totals in `stats-cache.json` remain, so their input/output split is estimated from your overall shares, and the panel says so.
+- Claude Code deletes old transcripts after a while. For those days only the totals in `stats-cache.json` remain, and they are not counted the same way as transcripts. So the script scales them by the ratio between the two, measured on days that have both, estimates their input/output split from your overall shares, and marks those days as estimated. The time-of-day chart covers only days whose transcripts remain.
 
 ## Development
 

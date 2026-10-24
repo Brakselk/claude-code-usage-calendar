@@ -13,6 +13,8 @@ const STALE_MS = 30 * 60e3
 const RUN_LIMIT_MS = 150_000 // the script's own timeout is 120 s
 const NO_PYTHON = 'no-python'
 const BAD_OUTPUT = 'bad-output'
+const SCRIPT_MISSING = 'script-missing'
+const EXIT_CODE = 'exit-code:'
 
 const MUTED = '#8a8a8a'
 const WARN = '#d9a441'
@@ -58,9 +60,20 @@ const refreshAtom = atom({ plugin: 'usage-calendar', key: 'refresh' } as const, 
   error: null,
 } as RefreshState)
 
+// Per session, and kept across a reload: whether the panel was opened once, and whether × closed it
+const uiAtom = atom({ plugin: 'usage-calendar', key: 'ui' } as const, { started: false, closed: false })
+
 async function openPane($: E): Promise<void> {
   const view = await read($, viewAtom)
   await $.ui.open({ id: PANE, title: STRINGS[view.lang].paneTitle })
+}
+
+/** Work started without waiting for it: a failure there must not surface as an unhandled rejection */
+const quietly = (p: Promise<unknown>) => void p.catch(() => undefined)
+
+async function registerCommand($: E): Promise<void> {
+  const lang = (await read($, viewAtom)).lang
+  await $.command.register({ name: 'usage-calendar', description: STRINGS[lang].commandDescription })
 }
 
 // The line under the prompt: how to reopen the panel, and the limits as they stand
@@ -120,6 +133,7 @@ const pad2 = (n: number) => String(n).padStart(2, '0')
 const localDate = (ms: number, offsetMin: number) => new Date(ms + offsetMin * 6e4)
 
 function fmtStamp(ms: number, offsetMin: number, S: Strings, lang: Lang): string {
+  if (!Number.isFinite(ms)) return '—'
   const d = localDate(ms, offsetMin)
   const time = `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}`
   const mon = S.months[d.getUTCMonth()]
@@ -142,7 +156,11 @@ const fmtMonth = (ym: string, S: Strings) => `${S.monthsLong[Number(ym.slice(5, 
 
 // claude-opus-5-5 → Opus 5.5, claude-haiku-4-5-20251001 → Haiku 4.5
 function modelName(id: string): string {
-  const m = /^claude-([a-z]+)-(\d+)(?:-(\d+))?/.exec(id.replace(/-\d{8}$/, ''))
+  const base = id.replace(/-\d{8}$/, '')
+  // The 3.x line put the version first: claude-3-7-sonnet → Sonnet 3.7
+  const old = /^claude-(\d+)(?:-(\d+))?-([a-z]+)/.exec(base)
+  if (old) return `${old[3]!.charAt(0).toUpperCase()}${old[3]!.slice(1)} ${old[1]}${old[2] ? `.${old[2]}` : ''}`
+  const m = /^claude-([a-z]+)-(\d+)(?:-(\d+))?/.exec(base)
   if (!m) return id
   const family = m[1]!.charAt(0).toUpperCase() + m[1]!.slice(1)
   return `${family} ${m[2]}${m[3] ? `.${m[3]}` : ''}`
@@ -150,6 +168,16 @@ function modelName(id: string): string {
 
 const meterColor = (pct: number, accent: string) => (pct >= 90 ? BAD : pct >= 70 ? WARN : accent)
 const accentHex = (id: string) => ACCENTS.find(a => a.id === id)?.hex ?? ACCENTS[0]!.hex
+
+/** Text in a Markdown table cell: a pipe or a line break would end the cell */
+const mdCell = (text: string) => text.replace(/\|/g, '\\|').replace(/\s*[\r\n]+\s*/g, ' ')
+
+/** The heatmap's first day: the Monday `weeks` weeks back, in the user's own calendar */
+function heatmapStart(nowMs: number, offsetMin: number, weeks: number): number {
+  const now = localDate(nowMs, offsetMin)
+  const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+  return today - (((new Date(today).getUTCDay() + 6) % 7) + (weeks - 1) * 7) * DAY
+}
 
 /** Only an http(s) address short enough for a Link; anything else would sink the pane's whole tree */
 function safeUrl(raw: unknown): string {
@@ -169,6 +197,7 @@ function isUsageData(x: unknown): x is UsageData {
     Array.isArray(d.hours) &&
     Array.isArray(d.sessions) &&
     typeof d.generatedAt === 'string' &&
+    Number.isFinite(Date.parse(d.generatedAt)) &&
     typeof d.utcOffsetMinutes === 'number'
   )
 }
@@ -180,6 +209,7 @@ const NOT_FOUND = /not found|not recognized|cannot find|no such file|microsoft s
 /** Runs the bundled script with the first Python 3 that answers, and remembers which one did */
 async function runScript($: E): Promise<UsageData> {
   const script = `${$.plugin.root}/scripts/collect_usage.py`
+  if (!(await $.fs.stat(script).then(() => true, () => false))) throw new Error(SCRIPT_MISSING)
   const saved = await $.store.get('python')
   const candidates: string[][] = [['python3'], ['python'], ['py', '-3']]
   if (Array.isArray(saved) && saved.every(part => typeof part === 'string')) candidates.unshift(saved as string[])
@@ -201,9 +231,11 @@ async function runScript($: E): Promise<UsageData> {
       await $.store.set('python', cmd)
       return parsed
     }
-    // A launcher that found nothing tries the next name; a Python that ran and failed is the answer
-    if (run.exitCode === 9009 || (NOT_FOUND.test(run.stderr) && !run.stderr.includes('Traceback'))) continue
-    throw new Error(lastLine(run.stderr) || `exit code ${run.exitCode}`)
+    // A launcher that found nothing, or a Python 2 that can't parse the script, tries the next name;
+    // a Python 3 that ran and failed is the answer
+    const isTooOld = run.stderr.includes('SyntaxError') && !run.stderr.includes('Traceback')
+    if (run.exitCode === 9009 || isTooOld || (NOT_FOUND.test(run.stderr) && !run.stderr.includes('Traceback'))) continue
+    throw new Error(lastLine(run.stderr) || `${EXIT_CODE}${run.exitCode}`)
   }
   throw new Error(NO_PYTHON)
 }
@@ -214,16 +246,18 @@ type Reading = {
 }
 
 /** A reading from this session; one without limit windows keeps the last ones it had */
-async function keepReading($: E, r: Reading): Promise<void> {
+async function keepReading($: E, r: Reading, windowsChanged = false): Promise<void> {
   const kept = await read($, liveAtom)
   const now = await $.clock.now()
   const isFresh = r.rateLimits.length > 0
+  // A measurement saying the windows changed to none means they left; any other empty reading keeps the last ones
+  const haveLeft = !isFresh && windowsChanged
   const live: LiveUsage = {
     rateLimits: isFresh
       ? r.rateLimits.map(w => ({ kind: w.kind, percentUsed: w.percentUsed, resetsAt: w.resetsAt ?? null }))
-      : kept?.rateLimits ?? [],
-    limitsAt: isFresh ? now : kept?.limitsAt ?? null,
-    limitsLive: isFresh || (kept?.limitsLive ?? false),
+      : haveLeft ? [] : kept?.rateLimits ?? [],
+    limitsAt: isFresh || haveLeft ? now : kept?.limitsAt ?? null,
+    limitsLive: isFresh || haveLeft || (kept?.limitsLive ?? false),
     contextTokens: r.context.tokens ?? null,
     contextWindow: r.context.window,
     contextPercent: r.context.percent ?? null,
@@ -249,6 +283,14 @@ async function refreshAll($: E, announce: boolean): Promise<void> {
     return isMine ? { ...r, isRunning: true, startedAt: now, error: null } : r
   })
   if (!isMine) return
+  // Every open session has its own timer: an automatic run steps aside while another session is counting
+  const lock = await $.store.get('refreshLock')
+  const lockedAt = lock && typeof lock === 'object' ? Number((lock as { at?: unknown }).at) : NaN
+  if (!announce && Number.isFinite(lockedAt) && now - lockedAt < RUN_LIMIT_MS) {
+    await update($, refreshAtom, r => ({ ...r, isRunning: false, startedAt: null }))
+    return
+  }
+  await $.store.set('refreshLock', { at: now })
   try {
     const data = await runScript($)
     await $.store.set('data', data)
@@ -259,6 +301,8 @@ async function refreshAll($: E, announce: boolean): Promise<void> {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     await update($, refreshAtom, r => ({ ...r, isRunning: false, error: message }))
+  } finally {
+    await $.store.delete('refreshLock').catch(() => undefined)
   }
 }
 
@@ -268,15 +312,23 @@ async function refreshIfStale($: E): Promise<void> {
   const now = await $.clock.now()
   if (isUsageData(kept) && now - Date.parse(kept.generatedAt) < STALE_MS) {
     await update($, dataAtom, () => kept)
+    await update($, refreshAtom, r => ({ ...r, error: null })) // fresh numbers: an old failure no longer applies
     return
   }
   await refreshAll($, false)
 }
 
 async function setView($: E, fn: (v: CalendarView) => CalendarView): Promise<void> {
+  const before = (await read($, viewAtom)).lang
   await update($, viewAtom, fn)
-  await $.store.set('view', await read($, viewAtom))
-  await showStatus($) // the language may have changed
+  const view = await read($, viewAtom)
+  await $.store.set('view', view)
+  await showStatus($)
+  if (view.lang !== before) {
+    // The command menu and the pane's tab speak the new language too; an open pane is retitled in place
+    await registerCommand($)
+    if ((await $.ui.panes().catch(() => [])).some(p => p.id === PANE)) await openPane($)
+  }
 }
 
 function summarize(days: DayRow[], nowMs: number, offsetMin: number) {
@@ -358,7 +410,7 @@ function heatmapSvg(
   const now = localDate(nowMs, offsetMin)
   const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
   const weekday = (t: number) => (new Date(t).getUTCDay() + 6) % 7 // Monday = 0
-  const start = today - (weekday(today) + (weeks - 1) * 7) * DAY
+  const start = heatmapStart(nowMs, offsetMin, weeks)
 
   // The scale is the shown weeks' own: one busy day long ago must not wash out the rest
   const first = new Date(start).toISOString().slice(0, 10)
@@ -445,20 +497,35 @@ function hoursSvg(hours: HourRow[], accent: string, S: Strings): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">${parts.join('')}</svg>`
 }
 
+// Timers belong to this load of the module: a reload drops them (and this flag), so the next start arms them again
+let isArmed = false
+
+/** What a session with a window gets: live readings, refreshes, and the panel opened once */
+async function startUi($: E): Promise<void> {
+  if (!isArmed) {
+    isArmed = true
+    quietly(loadLive($))
+    quietly(refreshIfStale($))
+    $.clock.every(STALE_MS, () => quietly(refreshIfStale($)))
+  }
+  const ui = await read($, uiAtom)
+  if (ui.started) return // a reload: the panel was opened before, and × may have closed it since
+  await update($, uiAtom, u => ({ ...u, started: true }))
+  if (!ui.closed) quietly(openPane($))
+}
+
 // --- hooks ----------------------------------------------------------------
 
 export const register: Register = (on, options: PluginOptions) => {
   const webUrl = safeUrl(options.webUrl)
   const webTask = typeof options.webRefreshTask === 'string' ? options.webRefreshTask.trim() : ''
-
   on('session.start', async ($, e, next) => {
     const [view, data, limits] = await Promise.all([$.store.get('view'), $.store.get('data'), $.store.get('limits')])
     if (view && typeof view === 'object') {
       const saved = view as Partial<CalendarView>
       await update($, viewAtom, () => ({ ...DEFAULT_VIEW, ...saved, open: { ...DEFAULT_VIEW.open, ...saved.open } }))
     }
-    const lang = (await read($, viewAtom)).lang
-    await $.command.register({ name: 'usage-calendar', description: STRINGS[lang].commandDescription })
+    await registerCommand($)
     if (isUsageData(data)) await update($, dataAtom, () => data)
     if (limits && typeof limits === 'object' && Array.isArray((limits as { rateLimits?: unknown }).rateLimits)) {
       const kept = limits as { rateLimits: LiveUsage['rateLimits']; at: number }
@@ -475,26 +542,36 @@ export const register: Register = (on, options: PluginOptions) => {
     // A fresh load starts with no refresh of its own running
     await update($, refreshAtom, r => ({ ...r, isRunning: false, startedAt: null }))
 
-    // Headless runs (-p, the SDK, a scheduled task) neither draw nor need fresh numbers
-    if (!e.isInteractive || e.surface === null) return next(e)
+    // The terminal REPL starts with its window; the desktop app and other hosts start headless and
+    // attach a window afterwards (session.attach). A -p run never does, so it never runs Python or opens a pane.
+    const surfaces = await $.session.surfaces().catch(() => [])
+    if (e.isInteractive || e.surface !== null || surfaces.length > 0) await startUi($).catch(() => undefined)
 
-    await loadLive($).catch(() => null)
-    void refreshIfStale($)
-    $.clock.every(STALE_MS, () => void refreshIfStale($))
-    // Every session opens with the panel; its × closes it for that session alone
-    void openPane($)
+    return next(e)
+  })
+
+  on('session.attach', async ($, e, next) => {
+    await startUi($).catch(() => undefined)
+
+    return next(e)
+  })
+
+  on('ui.close', async ($, e, next) => {
+    // × keeps the panel closed for the rest of this session, through reloads; /usage-calendar opens it again
+    if (e.id === PANE && e.origin.kind === 'person') await update($, uiAtom, u => ({ ...u, closed: true }))
 
     return next(e)
   })
 
   on('command.run', { command: 'usage-calendar' }, async $ => {
+    await update($, uiAtom, u => ({ ...u, started: true, closed: false }))
     await openPane($)
 
     return { text: STRINGS[(await read($, viewAtom)).lang].opened }
   })
 
   on('session.measure', async ($, e, next) => {
-    await keepReading($, e)
+    await keepReading($, e, e.changed.includes('rateLimits')).catch(() => undefined)
 
     return next(e)
   })
@@ -581,7 +658,7 @@ export const register: Register = (on, options: PluginOptions) => {
             {refresh.lastAt ? ` · ${S.refreshedAgo(fmtRel(refresh.lastAt - now, S, lang))}` : ''}
           </Text>
         </Box>
-        <Button key="lang" dimColor onPress={() => setView($, v => ({ ...v, lang: v.lang === 'en' ? 'tr' : 'en' }))}>
+        <Button key="lang" label={S.langLabel} dimColor onPress={() => setView($, v => ({ ...v, lang: v.lang === 'en' ? 'tr' : 'en' }))}>
           {lang === 'en' ? 'TR' : 'EN'}
         </Button>
       </Box>
@@ -612,7 +689,15 @@ export const register: Register = (on, options: PluginOptions) => {
     )
     const failure = refresh.error ? (
       <Text color="error">
-        {refresh.error === NO_PYTHON ? S.noPython : refresh.error === BAD_OUTPUT ? S.badOutput : S.refreshFailed(refresh.error)}
+        {refresh.error === NO_PYTHON
+          ? S.noPython
+          : refresh.error === BAD_OUTPUT
+            ? S.badOutput
+            : refresh.error === SCRIPT_MISSING
+              ? S.scriptMissing
+              : S.refreshFailed(
+                  refresh.error.startsWith(EXIT_CODE) ? S.exitCode(refresh.error.slice(EXIT_CODE.length)) : refresh.error,
+                )}
       </Text>
     ) : null
 
@@ -631,10 +716,7 @@ export const register: Register = (on, options: PluginOptions) => {
     const s = summarize(data.days, now, offset)
     // What the heatmap shows, in words for a reader that can't see it
     const shown = (() => {
-      const today = localDate(now, offset)
-      const from = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()) - view.weeks * 7 * DAY)
-        .toISOString()
-        .slice(0, 10)
+      const from = new Date(heatmapStart(now, offset, view.weeks)).toISOString().slice(0, 10)
       const inRange = data.days.filter(d => d.date >= from && (Number(d[view.metric]) || 0) > 0)
       const value = (d: DayRow) => Number(d[view.metric]) || 0
       return {
@@ -679,7 +761,7 @@ export const register: Register = (on, options: PluginOptions) => {
         ? [{
             id: selfId || 'self',
             title: selfRow?.title ?? S.thisSession,
-            where: S.where[selfRow?.where ?? 'desktop'],
+            where: S.where[selfRow?.where ?? (e.surface === 'terminal' ? 'terminal' : 'desktop')],
             pct: live.contextPercent,
             tokens: live.contextTokens,
             lastActive: S.now,
@@ -706,7 +788,7 @@ export const register: Register = (on, options: PluginOptions) => {
         .sort((a, b) => (a.date < b.date ? 1 : -1))
         .map(
           d =>
-            `| ${fmtDay(d.date, S, lang)} | ${fmtInt(d.messages, S)} | ${d.prompts == null ? '—' : fmtInt(d.prompts, S)} | ${fmtInt(d.sessions, S)} | ${fmtInt(d.tools, S)} | ${fmtCompact(d.tokens, S)} | ${d.topModel ? modelName(d.topModel) : '—'} |`,
+            `| ${fmtDay(d.date, S, lang)} | ${fmtInt(d.messages, S)} | ${d.prompts == null ? '—' : fmtInt(d.prompts, S)} | ${fmtInt(d.sessions, S)} | ${fmtInt(d.tools, S)} | ${fmtCompact(d.tokens, S)} | ${d.topModel ? mdCell(modelName(d.topModel)) : '—'} |`,
         ),
     ].join('\n')
 

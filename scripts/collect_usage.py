@@ -13,8 +13,10 @@ Usage:
 import argparse
 import glob
 import json
+import math
 import os
 import re
+import statistics
 import sys
 from collections import defaultdict
 from datetime import datetime, timedelta
@@ -44,10 +46,23 @@ PRICES = {
 }
 CONTEXT_200K = {"claude-haiku-4-5"}
 PARTS = ("input", "cacheWrite5m", "cacheWrite1h", "cacheRead", "output")
+# Session titles in transcripts: the row type and the field holding the title.
+# custom-title is a rename (the person's or the desktop app's); ai-title is Claude's own guess.
+TITLE_FIELDS = {"custom-title": "customTitle", "ai-title": "aiTitle"}
+# Blocks Claude Code puts in front of what the person typed
+INJECTED = re.compile(r"\s*(?:<system-reminder\b[^>]*>.*?</system-reminder>"
+                      r"|<artifact-view-context\b[^>]*>.*?</artifact-view-context>)", re.S)
+DAY = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 
 
 def config_dir():
     return os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude")
+
+
+def env_dir(name):
+    """A folder named by an environment variable, or None: unset, empty or relative would mean the current folder."""
+    value = os.environ.get(name, "")
+    return value if os.path.isabs(value) else None
 
 
 def base_model(model):
@@ -66,16 +81,17 @@ def desktop_session_files():
     """The desktop app's own record of each session, wherever this install keeps it."""
     roots = []
     if sys.platform == "win32":
-        appdata = os.environ.get("APPDATA", "")
-        local = os.environ.get("LOCALAPPDATA", "")
-        roots += [os.path.join(appdata, "Claude")]
-        # Store installs keep their data in a folder of their own
-        roots += glob.glob(os.path.join(local, "Claude-Data", "*"))
-        roots += glob.glob(os.path.join(local, "Packages", "Claude_*", "LocalCache", "Roaming", "Claude"))
+        appdata, local = env_dir("APPDATA"), env_dir("LOCALAPPDATA")
+        if appdata:
+            roots.append(os.path.join(appdata, "Claude"))
+        if local:
+            # Store installs keep their data in a folder of their own
+            roots += glob.glob(os.path.join(local, "Claude-Data", "*"))
+            roots += glob.glob(os.path.join(local, "Packages", "Claude_*", "LocalCache", "Roaming", "Claude"))
     elif sys.platform == "darwin":
         roots.append(os.path.expanduser("~/Library/Application Support/Claude"))
     else:
-        roots.append(os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"), "Claude"))
+        roots.append(os.path.join(env_dir("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"), "Claude"))
     files = []
     for root in roots:
         files += glob.glob(os.path.join(root, "claude-code-sessions", "**", "local_*.json"), recursive=True)
@@ -83,7 +99,14 @@ def desktop_session_files():
 
 
 def num(x):
-    return x if isinstance(x, (int, float)) and not isinstance(x, bool) else 0
+    """A count or token total, else 0.
+
+    NaN, Infinity (json.loads accepts both), negatives and absurd sizes become 0 too: the output must
+    stay valid JSON for JavaScript, and sums and costs must stay finite. No real count is near 1e15.
+    """
+    if isinstance(x, bool) or not isinstance(x, (int, float)):
+        return 0
+    return x if 0 <= x <= 1e15 else 0
 
 
 def local(ts):
@@ -91,19 +114,38 @@ def local(ts):
     if not isinstance(ts, str):
         return None
     try:
-        return datetime.fromisoformat(ts.replace("Z", "+00:00")).astimezone()
-    except ValueError:
+        when = datetime.fromisoformat(ts.replace("Z", "+00:00")).astimezone()
+    except (ValueError, OSError, OverflowError):
+        # Windows can't convert times before 1970 or after 3000; years 1 and 9999 overflow in some zones
         return None
+    # Windows' range everywhere, so Linux and macOS don't list days that Windows skips
+    return when if 1970 <= when.year < 3000 else None
 
 
-def entries(path):
-    """The rows of one transcript, one at a time; unreadable files and lines are skipped."""
+def is_day(s):
+    """A plain YYYY-MM-DD that is a real date; anything else would make a broken day in the calendar."""
+    if not isinstance(s, str) or not DAY.fullmatch(s):
+        return False
+    try:
+        datetime.strptime(s, "%Y-%m-%d")
+    except ValueError:
+        return False
+    return True
+
+
+def entries(path, only_with=()):
+    """The rows of one transcript, one at a time; unreadable files and lines are skipped.
+
+    With only_with, a line is parsed only when it contains one of those strings: parsing is the slow part.
+    """
     try:
         with open(path, encoding="utf-8", errors="replace") as fh:
             for line in fh:
+                if only_with and not any(s in line for s in only_with):
+                    continue
                 try:
                     e = json.loads(line)
-                except ValueError:
+                except (ValueError, RecursionError):  # RecursionError: absurdly nested junk
                     continue
                 if isinstance(e, dict):
                     yield e
@@ -125,11 +167,19 @@ def text_of(e):
     return ""
 
 
+def session_of(e):
+    # Ids go into sets: anything but a string (a list, say) would crash the run
+    sid = e.get("sessionId")
+    return sid if isinstance(sid, str) and sid else None
+
+
 def is_marker_row(e):
     """The refresh task's own prompt: it opens with MARKER, or arrives inside the task's wrapper."""
-    if e.get("type") != "user":
+    # A subagent's prompt is written by its parent session: quoting MARKER there must not drop the parent
+    if e.get("type") != "user" or e.get("isSidechain"):
         return False
-    text = text_of(e).lstrip()
+    # A pasted or file-read prompt can open with a byte order mark, which isn't whitespace to lstrip()
+    text = text_of(e).lstrip().lstrip("﻿").lstrip()
     if text.startswith(MARKER):
         return True
     # A scheduled run wraps its prompt in a tag that opens a line; a quote of it mid-line is someone's message
@@ -137,14 +187,31 @@ def is_marker_row(e):
     return bool(wrapper) and MARKER in text[wrapper.end():]
 
 
+def strip_injected(text):
+    """The text past any system-reminder and artifact-view-context blocks it opens with."""
+    m = INJECTED.match(text)
+    while m:
+        text = text[m.end():]
+        m = INJECTED.match(text)
+    return text
+
+
 def is_typed_prompt(e):
     """A prompt the person typed: not a tool result, a system row, a slash command or an interruption."""
     if e.get("type") != "user" or e.get("isMeta") or e.get("isSidechain"):
         return False
+    # A compacted conversation's summary and rows shown only in the transcript are Claude Code's own
+    if e.get("isCompactSummary") or e.get("isVisibleInTranscriptOnly"):
+        return False
     content = message_of(e).get("content")
     if isinstance(content, list) and any(isinstance(c, dict) and c.get("type") == "tool_result" for c in content):
         return False
-    text = text_of(e).strip()
+    origin = e.get("origin")
+    if isinstance(origin, dict):
+        # Newer Claude Code says who wrote the row, and a typed prompt may still open with an injected block
+        return origin.get("kind") == "human"
+    # Older Claude Code: tell from the text, past the blocks put in front of what was typed
+    text = strip_injected(text_of(e)).strip()
     has_image = isinstance(content, list) and any(isinstance(c, dict) and c.get("type") == "image" for c in content)
     if not text:
         return has_image
@@ -184,19 +251,43 @@ def read_stats_cache(home):
     try:
         with open(os.path.join(home, "stats-cache.json"), encoding="utf-8") as fh:
             cache = json.load(fh)
-    except (OSError, ValueError):
+    except (OSError, ValueError, RecursionError):
         return {}, {}, {}
     if not isinstance(cache, dict):
         return {}, {}, {}
 
     def by_date(rows):
-        return {r["date"]: r for r in rows if isinstance(r, dict) and isinstance(r.get("date"), str)} if isinstance(rows, list) else {}
+        return {r["date"]: r for r in rows if isinstance(r, dict) and is_day(r.get("date"))} if isinstance(rows, list) else {}
 
     activity = by_date(cache.get("dailyActivity"))
     tokens = {d: r.get("tokensByModel") for d, r in by_date(cache.get("dailyModelTokens")).items()
               if isinstance(r.get("tokensByModel"), dict)}
     usage = cache.get("modelUsage") if isinstance(cache.get("modelUsage"), dict) else {}
     return activity, tokens, usage
+
+
+def cache_overcount(days, cache_act, cache_tok):
+    """How much stats-cache.json overcounts messages and tokens: the median cache/transcript ratio
+    over days that have both, per measure, or None for a measure no day has both of.
+
+    It counts every streamed copy of a reply (real data: ~1.6x messages, ~2.6x tokens);
+    its sessions and tool calls match the transcripts, so they are left alone.
+    """
+    messages, tokens = [], []
+    for d, rec in days.items():
+        cached = num(cache_act.get(d, {}).get("messageCount"))
+        if cached and rec["messages"]:
+            messages.append(cached / rec["messages"])
+        cached = sum(num(n) for n in cache_tok.get(d, {}).values())
+        counted = sum(sum(p.values()) for p in rec["tokens"].values())
+        if cached and counted:
+            tokens.append(cached / counted)
+    return {"messages": statistics.median(messages) if messages else None,
+            "tokens": statistics.median(tokens) if tokens else None}
+
+
+def shrink(value, factor):
+    return int(round(value / factor)) if factor else value
 
 
 def estimate_parts(model_usage, model, total):
@@ -219,41 +310,56 @@ def estimate_parts(model_usage, model, total):
 
 def collect():
     home = config_dir()
-    transcripts = glob.glob(os.path.join(home, "projects", "**", "*.jsonl"), recursive=True)
+    # Sorted, so that ties between copies of a row resolve the same way on every run and system
+    transcripts = sorted(glob.glob(os.path.join(home, "projects", "**", "*.jsonl"), recursive=True))
 
     desktop = {}
     for p in desktop_session_files():
         try:
             with open(p, encoding="utf-8") as fh:
                 d = json.load(fh)
-            desktop[d["cliSessionId"]] = {"title": d.get("title"), "archived": bool(d.get("isArchived"))}
-        except (OSError, ValueError, KeyError, TypeError):
-            pass
+        except (OSError, ValueError, RecursionError):
+            continue
+        # Only the app's own record: a JSON object with a session id
+        if not isinstance(d, dict) or not isinstance(d.get("cliSessionId"), str):
+            continue
+        title = d.get("title")
+        desktop[d["cliSessionId"]] = {"title": title if isinstance(title, str) else None,
+                                      "archived": bool(d.get("isArchived"))}
 
-    # First pass: the refresh task's sessions, so that their subagents' files go too
+    # First pass: the refresh task's sessions, so that their subagents' files go too.
+    # Its prompt always contains MARKER, so lines without it (or the wrapper) aren't parsed at all.
     skipped = set()
     for path in transcripts:
-        for e in entries(path):
-            if is_marker_row(e) and e.get("sessionId"):
-                skipped.add(e["sessionId"])
+        for e in entries(path, only_with=(MARKER, "<scheduled-task")):
+            sid = session_of(e)
+            if sid and is_marker_row(e):
+                skipped.add(sid)
 
     days = defaultdict(lambda: {"messages": 0, "prompts": 0, "tools": 0, "sessions": set(),
                                 "tokens": defaultdict(lambda: defaultdict(int))})
     hours = defaultdict(int)
     seen_rows = set()  # the same row is copied into resumed and forked sessions' files
     seen_msg = set()  # streamed replies repeat one message id
-    sessions = {}
+    # Per session id, over all files: a session's rows and titles are copied into forks and subagents
+    last_reply = {}  # sessionId -> (when, model, context, entrypoint) of its latest main-thread reply
+    titles = {}  # sessionId -> {row type: (from the session's own file, title)}
 
     for path in transcripts:
-        title, last, sid_of_file = None, None, None
+        # A session's own file is named after it; other files only carry copies of its rows
+        stem = os.path.splitext(os.path.basename(path))[0]
         for e in entries(path):
-            sid = e.get("sessionId")
+            sid = session_of(e)
             if sid in skipped:
-                break
-            sid_of_file = sid_of_file or sid
+                continue  # just the task's rows: a fork can start with rows copied from it
             t = e.get("type")
-            if t == "ai-title" and isinstance(e.get("aiTitle"), str):
-                title = e["aiTitle"]
+            field = TITLE_FIELDS.get(t)
+            if sid and field and isinstance(e.get(field), str) and e[field]:
+                own = sid == stem
+                kept = titles.setdefault(sid, {}).get(t)
+                # A later row wins, but a copy in another file never beats the session's own file
+                if kept is None or own or not kept[0]:
+                    titles[sid][t] = (own, e[field])
             if t not in ("user", "assistant"):
                 continue
             when = local(e.get("timestamp"))
@@ -262,11 +368,13 @@ def collect():
             msg = message_of(e)
             model = msg.get("model") if isinstance(msg.get("model"), str) else ""
             u = msg.get("usage") if isinstance(msg.get("usage"), dict) else None
-            if t == "assistant" and u and model.startswith("claude") and not e.get("isSidechain"):
-                last = (when, model, context_size(u), sid, e.get("entrypoint"))
+            if t == "assistant" and u and model.startswith("claude") and not e.get("isSidechain") and sid:
+                # Compare times, not minute strings: copies in several files must not hide the latest
+                if sid not in last_reply or when >= last_reply[sid][0]:
+                    last_reply[sid] = (when, model, context_size(u), e.get("entrypoint"))
 
             row_id = e.get("uuid")
-            if row_id is not None:
+            if isinstance(row_id, str):
                 if row_id in seen_rows:
                     continue
                 seen_rows.add(row_id)
@@ -282,33 +390,39 @@ def collect():
                 if isinstance(content, list):
                     rec["tools"] += sum(1 for c in content if isinstance(c, dict) and c.get("type") == "tool_use")
                 mid = msg.get("id")
-                if mid and u and model.startswith("claude") and mid not in seen_msg:
+                if isinstance(mid, str) and mid and u and model.startswith("claude") and mid not in seen_msg:
                     seen_msg.add(mid)
                     for part, n in usage_parts(u).items():
                         rec["tokens"][model][part] += n
 
-        if last:
-            when, model, ctx, sid, entry = last
-            meta = desktop.get(sid, {})
-            age = NOW - when
-            recent = age <= timedelta(hours=ACTIVE_HOURS)
-            open_in_app = sid in desktop and not meta.get("archived") and age <= timedelta(days=OPEN_SESSION_DAYS)
-            if (recent or open_in_app) and (sid not in sessions or sessions[sid]["lastActive"] < when.isoformat()):
-                window = context_window(model)
-                sessions[sid] = {
-                    "session": sid,
-                    "title": meta.get("title") or title,
-                    "where": "desktop" if entry == "claude-desktop" or sid in desktop else "terminal",
-                    "model": model,
-                    "contextTokens": ctx,
-                    "contextWindow": window,
-                    "percentUsed": round(ctx / window * 100, 1) if window else None,
-                    "lastActive": when.isoformat(timespec="minutes"),
-                }
+    sessions = []
+    for sid, (when, model, ctx, entry) in last_reply.items():
+        meta = desktop.get(sid, {})
+        age = NOW - when
+        recent = age <= timedelta(hours=ACTIVE_HOURS)
+        open_in_app = sid in desktop and not meta.get("archived") and age <= timedelta(days=OPEN_SESSION_DAYS)
+        if not (recent or open_in_app):
+            continue
+        named = titles.get(sid, {})
+        window = context_window(model)
+        sessions.append((when, {
+            "session": sid,
+            # The title the desktop app shows, else a rename, else Claude's own guess
+            "title": meta.get("title") or named.get("custom-title", (0, None))[1] or named.get("ai-title", (0, None))[1],
+            "where": "desktop" if entry == "claude-desktop" or sid in desktop else "terminal",
+            "model": model,
+            "contextTokens": ctx,
+            "contextWindow": window,
+            "percentUsed": round(ctx / window * 100, 1) if window else None,
+            "lastActive": when.isoformat(timespec="minutes"),
+        }))
+    sessions.sort(key=lambda s: s[0], reverse=True)
 
     # Claude Code deletes old transcripts after a while; those days live on only in stats-cache.json.
-    # Its token totals count every streamed copy of a reply, so a day with transcripts uses them instead.
+    # Its message and token totals count every streamed copy of a reply, so a day with transcripts uses
+    # them instead, and a cache-only day is divided by how much the cache overcounts the other days.
     cache_act, cache_tok, model_usage = read_stats_cache(home)
+    over = cache_overcount(days, cache_act, cache_tok)
 
     rows = []
     for d in sorted(set(days) | set(cache_act) | set(cache_tok)):
@@ -317,13 +431,16 @@ def collect():
             parts = {m: dict(p) for m, p in rec["tokens"].items()}
             counts = {"messages": rec["messages"], "prompts": rec["prompts"],
                       "sessions": len(rec["sessions"]), "tools": rec["tools"]}
-            is_estimated = False
+            is_estimated, scaled = False, None
         else:
             c = cache_act.get(d, {})
-            parts = {m: estimate_parts(model_usage, m, num(n)) for m, n in cache_tok.get(d, {}).items()}
-            counts = {"messages": num(c.get("messageCount")), "prompts": None,
+            parts = {m: estimate_parts(model_usage, m, shrink(num(n), over["tokens"]))
+                     for m, n in cache_tok.get(d, {}).items()}
+            counts = {"messages": shrink(num(c.get("messageCount")), over["messages"]), "prompts": None,
                       "sessions": num(c.get("sessionCount")), "tools": num(c.get("toolCallCount"))}
             is_estimated = True
+            scaled = ({k: round(f, 3) if f else None for k, f in over.items()}
+                      if over["messages"] or over["tokens"] else None)
         by_model = {m: sum(p.values()) for m, p in parts.items()}
         priced = [(m, cost_of(m, p)) for m, p in parts.items()]
 
@@ -343,6 +460,9 @@ def collect():
             "unpricedTokens": sum(by_model[m] for m, c in priced if c is None),
             "models": by_model,
             "isEstimated": is_estimated,
+            # Cache-only days: what the cache's messages and tokens were divided by,
+            # {"messages": f or null, "tokens": f or null}; null on transcript days and when no day overlaps
+            "scaledFromCache": scaled,
         })
 
     offset = NOW.utcoffset() or timedelta(0)
@@ -352,7 +472,7 @@ def collect():
         "utcOffsetMinutes": int(offset.total_seconds() // 60),
         "days": rows,
         "hours": [{"hour": h, "prompts": hours[h]} for h in range(24)],
-        "sessions": sorted(sessions.values(), key=lambda s: s["lastActive"], reverse=True),
+        "sessions": [s for _, s in sessions],
     }
 
 
@@ -366,11 +486,49 @@ def limits_from(out_dir):
         windows = plan.get("windows") if isinstance(plan, dict) else None
         if not isinstance(windows, list):
             return None
-    except (OSError, ValueError):
+        fetched = datetime.fromtimestamp(os.path.getmtime(path)).astimezone().isoformat(timespec="minutes")
+    except (OSError, ValueError, OverflowError, RecursionError):
         return None
-    fetched = datetime.fromtimestamp(os.path.getmtime(path)).astimezone().isoformat(timespec="minutes")
-    return [{"limit": w.get("label"), "percentUsed": w.get("percentUsed"), "resetsAt": w.get("resetsAt"),
-             "plan": plan.get("plan"), "fetchedAt": fetched} for w in windows if isinstance(w, dict)]
+
+    # Only strings and finite numbers pass through, so limits.json stays valid JSON
+    def text(x):
+        return x if isinstance(x, str) else None
+
+    def percent(x):
+        return x if isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x) else None
+
+    return [{"limit": text(w.get("label")), "percentUsed": percent(w.get("percentUsed")),
+             "resetsAt": text(w.get("resetsAt")), "plan": text(plan.get("plan")), "fetchedAt": fetched}
+            for w in windows if isinstance(w, dict)]
+
+
+def say(stream, text):
+    # Bytes, not text: a Windows pipe would otherwise use the console's code page and fail on other characters.
+    # "replace": a title cut mid-emoji holds half a surrogate pair, which UTF-8 can't encode
+    stream.buffer.write(text.encode("utf-8", "replace"))
+    stream.flush()
+
+
+def fail(message, code=2):
+    say(sys.stderr, f"collect_usage.py: error: {message}\n")
+    sys.exit(code)
+
+
+def write_json(path, value):
+    """Write to a temporary file in the same folder, then swap it in: a reader never sees half a file."""
+    tmp = f"{path}.{os.getpid()}.tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8", errors="replace") as fh:  # "replace": see say()
+            json.dump(value, fh, indent=1, ensure_ascii=False, allow_nan=False)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def main():
@@ -378,26 +536,37 @@ def main():
     ap.add_argument("--json", action="store_true", help="print everything as one JSON object")
     ap.add_argument("--out", metavar="DIR", help="write the web dashboard's JSON files to DIR")
     args = ap.parse_args()
-    if not args.json and not args.out:
+    if not args.json and args.out is None:
         ap.error("pass --json or --out DIR")
+
+    out = None
+    if args.out is not None:
+        # Checked before collecting: a bad folder is a one-line error, not a traceback at the end
+        out = os.path.expanduser(os.path.expandvars(args.out))  # "~" too, where the shell leaves it alone
+        if not out.strip():
+            fail("--out needs a folder name")
+        if os.path.exists(out) and not os.path.isdir(out):
+            fail(f"--out {out} is a file, not a folder")
+        try:
+            os.makedirs(out, exist_ok=True)
+        except OSError as err:
+            fail(f"--out {out}: can't create the folder ({err.strerror or err})")
 
     data = collect()
     if args.json:
-        # Bytes, not text: a Windows pipe would otherwise use the console's code page
-        sys.stdout.buffer.write(json.dumps(data, ensure_ascii=False).encode("utf-8"))
-        sys.stdout.flush()
-    if args.out:
-        out = os.path.expanduser(os.path.expandvars(args.out))  # "~" too, where the shell leaves it alone
-        os.makedirs(out, exist_ok=True)
+        say(sys.stdout, json.dumps(data, ensure_ascii=False, allow_nan=False))
+    if out is not None:
         files = {"daily.json": data["days"], "hours.json": data["hours"], "sessions.json": data["sessions"]}
         limits = limits_from(out)
         if limits is not None or not os.path.exists(os.path.join(out, "limits.json")):
             files["limits.json"] = limits or []
-        for name, value in files.items():
-            with open(os.path.join(out, name), "w", encoding="utf-8") as fh:
-                json.dump(value, fh, indent=1, ensure_ascii=False)
+        try:
+            for name, value in files.items():
+                write_json(os.path.join(out, name), value)
+        except OSError as err:
+            fail(f"--out {out}: can't write ({err.strerror or err})", code=1)
         if not args.json:
-            print(f"{len(data['days'])} active days, {len(data['sessions'])} sessions -> {out}")
+            say(sys.stdout, f"{len(data['days'])} active days, {len(data['sessions'])} sessions -> {out}\n")
 
 
 if __name__ == "__main__":

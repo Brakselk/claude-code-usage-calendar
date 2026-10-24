@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.2.1 — 2026-10-24
+
+### Fixed
+- In the Claude desktop app the panel never opened or refreshed on its own (a 0.2.0 regression): the app starts sessions headless and attaches its window afterwards. The panel now starts when a window attaches, and a `-p` run still never runs Python or opens it.
+- A pane closed with × stays closed for that session, even when the plugin reloads; `/usage-calendar` opens it again.
+- Switching language now retitles the open pane and the command's description.
+- An old "Refresh failed" line no longer stays under fresh numbers another session kept.
+- A `|` in a model name no longer breaks the days table.
+- A missing usage script says so instead of "Python was not found"; a Python 2 that can't read the script makes way for the next Python; an exit code reads in the panel's language.
+- The heatmap's description counts only the days the heatmap draws; this session shows as Terminal in a terminal; limit windows that leave are no longer shown as live; kept data whose time doesn't parse is ignored instead of showing "NaN".
+- Script: a malformed desktop session file, an out-of-range timestamp, odd ids or deeply nested junk no longer crash the run; prompts typed after an injected system block are counted (they carry Claude Code's own `origin` marker), compaction summaries are not; the session list keeps the truly latest reply and the right title across files, preferring the desktop app's title, then a rename, then Claude's guess; `--out` summaries and titles cut mid-emoji print safely on any console.
+
+### Changed
+- Only one open session runs an automatic count at a time (a lock in the plugin's store); a press of Refresh always runs.
+- Days known only from `stats-cache.json` are divided by the overcount measured on days that have both (new day field `scaledFromCache`).
+- A marker quoted inside a subagent no longer drops its parent session, and a fork that starts with the refresh task's copied rows still counts its own.
+- `--out` writes each file atomically, rejects an empty or non-folder path with a one-line error, and output never contains NaN or negative counts. Unset `APPDATA`/`LOCALAPPDATA` no longer means the current folder.
+- The first pass over transcripts only parses lines that can hold the marker (about 2.5× faster there).
+- Docs: where to find the script after an install, how to set the options (`/plugin configure`, `--config`, `--values-stdin`), a more accurate privacy note, Python 3.7+, and the Turkish guide carries the task prompt itself.
+
+### Tests
+- Script tests 10 → 28; panel tests 15 → 26.
+
 ## 0.2.0 — 2026-10-24
 
 Fixes from a full review of the panel and the data script.

@@ -4,9 +4,14 @@
 
 The panel needs nothing else. If you also want the calendar as a page you can open in a browser (on claude.ai, private to you unless you share it), Claude can build one from the same numbers and keep it fresh with a scheduled task. This part can't ship inside the plugin: the page lives in your claude.ai account, and the task runs in your Claude Code.
 
-What goes on that page: your daily numbers, limits, and the titles and ids of sessions from the last day. Leave this out if you'd rather none of that left your computer.
+What goes on that page: your daily numbers and prompts by hour, your limits, and the titles and ids of sessions used in the last 24 hours, plus sessions still open in the desktop app from the past week. Leave this out if you'd rather none of that left your computer.
 
-Below, `<SCRIPT>` is the path to `scripts/collect_usage.py`: in a clone of this repository, or in the installed plugin's folder (`claude plugin list` shows where it is read from). Use `python` instead of `python3` where that is your Python's name, as on most Windows machines.
+Below, `<SCRIPT>` is the path to `scripts/collect_usage.py`. After installing the plugin from GitHub, use the copy in its marketplace folder, whose path stays the same across updates:
+
+- macOS and Linux: `~/.claude/plugins/marketplaces/claude-code-usage-calendar/scripts/collect_usage.py`
+- Windows: `%USERPROFILE%\.claude\plugins\marketplaces\claude-code-usage-calendar\scripts\collect_usage.py` (in PowerShell, `$env:USERPROFILE` in place of `%USERPROFILE%`)
+
+If `CLAUDE_CONFIG_DIR` is set, that folder takes the place of `~/.claude`. A clone of this repository works too. Don't use the `installPath` that `claude plugin list --json` prints: it ends in the plugin's version and changes with every update. Use `python` instead of `python3` where that is your Python's name, as on most Windows machines.
 
 ## 1. Write the numbers to a folder
 
@@ -46,6 +51,18 @@ Refresh the Claude Code Usage Calendar dashboard at <DASHBOARD_URL>. Do only the
 
 ## 4. Point the panel at it
 
-Set `webUrl` to the dashboard link and `webRefreshTask` to the task id, in `/config` under the plugin. The panel then shows **Open on web** and **Update web too**.
+Set `webUrl` to the dashboard link and `webRefreshTask` to the task id. In a Claude Code terminal session:
+
+```
+/plugin configure usage-calendar@claude-code-usage-calendar
+```
+
+Or from a shell (bash or PowerShell):
+
+```bash
+echo '{"webUrl": "<DASHBOARD_URL>", "webRefreshTask": "<TASK_ID>"}' | claude plugin configure usage-calendar@claude-code-usage-calendar --values-stdin
+```
+
+The panel then shows **Open on web** and **Update web too**. Both can also be set when you install the plugin; see [Settings](../README.md#settings).
 
 Scheduled tasks run while the Claude app is open; one that was due while it was closed runs the next time you open it. Save the task in Auto mode, or it stops and waits for you to approve its steps (writing `usage_raw.json` and running the script).

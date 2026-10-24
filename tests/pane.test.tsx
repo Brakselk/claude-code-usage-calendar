@@ -38,6 +38,8 @@ function engine(on: any, runs: string[][], stdout = JSON.stringify(SAMPLE), open
   on('ui.toast', () => ({ value: undefined }))
   on('session.start', (_: unknown, e: { cwd: string }) => ({ cwd: e.cwd }))
   on('session.id', () => ({ value: 'self' }))
+  on('session.surfaces', () => ({ value: [] }))
+  on('fs.stat', () => ({ value: { kind: 'file', size: 1, mtimeMs: 0 } }))
   on('session.usage', () => ({
     value: {
       startedAt: 0,
@@ -122,12 +124,14 @@ test('a machine without Python gets told how to fix it', async ($, on) => {
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('session.start', (_: unknown, e: { cwd: string }) => ({ cwd: e.cwd }))
   on('session.usage', () => ({ value: { startedAt: 0, context: { window: 1_000_000 }, rateLimits: [] } }))
+  on('session.surfaces', () => ({ value: [] }))
+  on('fs.stat', () => ({ value: { kind: 'file', size: 1, mtimeMs: 0 } }))
   on('process.run', () => {
     throw new Error('ENOENT')
   })
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
-  expect(await has(ui, /Python 3 was not found/)).toBe('found')
+  expect(await has(ui, /Python 3.7 or later was not found/)).toBe('found')
   await ui.unmount()
 })
 
@@ -147,10 +151,10 @@ test('the status line says how to reopen the panel and shows the limits', async 
     return { value: undefined }
   })
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' }) // lets the start's readings land
   expect(JSON.stringify(statuses[statuses.length - 1])).toContain('Usage Calendar: /usage-calendar · 5h 23% · week 12%')
 
   // It follows the language switch
-  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
   await ui.press({ key: 'lang' })
   expect(JSON.stringify(statuses[statuses.length - 1])).toContain('5 saat %23 · haftalık %12')
   await ui.unmount()

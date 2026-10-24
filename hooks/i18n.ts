@@ -89,6 +89,9 @@ export type Strings = {
   badOutput: string
   webFailed: string
   colorNames: Record<string, string>
+  scriptMissing: string
+  exitCode: (code: string) => string
+  langLabel: string
 }
 
 export const STRINGS: Record<Lang, Strings> = {
@@ -102,7 +105,7 @@ export const STRINGS: Record<Lang, Strings> = {
     webUpdate: 'Update web too',
     openWeb: 'Open on web',
     refreshFailed: w => `Refresh failed: ${w}`,
-    noPython: 'Python 3 was not found. Install it from python.org, then press Refresh.',
+    noPython: 'Python 3.7 or later was not found. Install it from python.org, then press Refresh.',
     toastRefreshed: 'Calendar refreshed',
     toastWeb: 'Web update requested',
     webPrompt: t =>
@@ -188,18 +191,21 @@ export const STRINGS: Record<Lang, Strings> = {
     badOutput: 'The usage script answered with something unexpected. Press Refresh to try again.',
     webFailed: 'Could not ask for the web update',
     colorNames: { clay: 'Clay', ocean: 'Ocean', forest: 'Forest', violet: 'Violet', rose: 'Rose', amber: 'Amber', teal: 'Teal' },
+    scriptMissing: "The plugin's usage script is missing. Reinstall the plugin, then press Refresh.",
+    exitCode: c => `exit code ${c}`,
+    langLabel: 'Türkçe',
   },
   tr: {
     title: 'Claude Code Kullanım Takvimi',
     dataAsOf: w => `Veriler ${w} itibarıyla`,
     noData: "Henüz veri yok: Yenile'ye bas",
-    refreshedAgo: r => `panelden yenilendi ${r}`,
+    refreshedAgo: r => `${r} yenilendi`,
     refresh: 'Yenile',
     refreshing: 'Yenileniyor…',
     webUpdate: "Web'i de güncelle",
     openWeb: "Web'de aç",
     refreshFailed: w => `Yenilenemedi: ${w}`,
-    noPython: "Python 3 bulunamadı. python.org'dan kurup Yenile'ye bas.",
+    noPython: "Python 3.7 ya da üstü bulunamadı. python.org'dan kurup Yenile'ye bas.",
     toastRefreshed: 'Takvim yenilendi',
     toastWeb: 'Web güncellemesi istendi',
     webPrompt: t =>
@@ -285,5 +291,8 @@ export const STRINGS: Record<Lang, Strings> = {
     badOutput: "Kullanım script'i beklenmedik bir yanıt verdi. Yeniden denemek için Yenile'ye bas.",
     webFailed: 'Web güncellemesi istenemedi',
     colorNames: { clay: 'Kil', ocean: 'Okyanus', forest: 'Orman', violet: 'Mor', rose: 'Gül', amber: 'Kehribar', teal: 'Turkuaz' },
+    scriptMissing: "Eklentinin kullanım script'i eksik. Eklentiyi yeniden kurup Yenile'ye bas.",
+    exitCode: c => `çıkış kodu ${c}`,
+    langLabel: 'English',
   },
 }
