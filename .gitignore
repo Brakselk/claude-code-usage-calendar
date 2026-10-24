@@ -1,0 +1,20 @@
+# Your own usage numbers never belong in the repository
+data/
+*.usage.json
+usage_raw.json
+daily.json
+hours.json
+sessions.json
+limits.json
+
+# Written by Claude Code when it loads the plugin
+.claude-plugin/types/
+
+# Python and editor leftovers
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db
+*.log
+*~
+*.swp

@@ -1,0 +1,23 @@
+{
+  "name": "token-garden",
+  "version": "0.1.0",
+  "description": "A GitHub-style calendar of your Claude Code usage in a side panel: daily heatmap, live plan limits, context fill per session, tokens and estimated cost.",
+  "author": { "name": "Brakselk", "url": "https://github.com/Brakselk" },
+  "license": "MIT",
+  "keywords": ["usage", "calendar", "heatmap", "tokens", "limits", "panel"],
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "webUrl": {
+      "type": "string",
+      "title": "Web dashboard link",
+      "description": "Optional. A claude.ai dashboard of the same numbers; the panel shows an \"Open on web\" link to it.",
+      "default": ""
+    },
+    "webRefreshTask": {
+      "type": "string",
+      "title": "Web refresh task id",
+      "description": "Optional. The id of a Claude Code scheduled task that refreshes that dashboard; the panel shows an \"Update web too\" button that runs it.",
+      "default": ""
+    }
+  }
+}
